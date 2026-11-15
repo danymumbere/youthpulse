@@ -1,319 +1,333 @@
+// js/app.js
 "use strict";
 
-/* -------------------------------------------------------------------------- */
-/*  YouthPulse – Main Orchestrator (app.js)                                   */
-/*  ES‑module, vanilla JS. Handles routing, Service Worker registration,      */
-/*  module initialization, global error handling, and bootstraps real content.*/
-/* -------------------------------------------------------------------------- */
-
-import { startGame, resetGame } from "./game.js";
-import { renderBadges, checkAndUnlockBadges } from "./badges.js";
-import { renderLeaderboard, addLeaderboardEntry } from "./leaderboard.js";
-import { setupShare, shareMeme } from "./share.js";
-import { data } from "./data.js";
-import { showNetworkError, showToast } from "./utils.js";
-import {
-  openDb,
-  getScore,
-  setScore,
-  getUnlockedBadgeIds,
-  setBadgeUnlocked,
-  getLeaderboardEntries,
-  exportData,
-} from "./db.js";
+import * as gameModule from './game.js';
+import * as badgesModule from './badges.js';
+import * as leaderboardModule from './leaderboard.js';
+import * as shareModule from './share.js';
+import { data } from './data.js';
+import * as utils from './utils.js';
+import * as dbModule from './db.js';
 
 /* -------------------------------------------------------------------------- */
-/*  Service Worker Registration                                               */
+/*  YouthPulse – Main Orchestrator                                            */
+/*  ES‑module, vanilla JS. Handles routing, Service Worker registration,       */
+/*  UI module loading, global error handling and local persistence.           */
 /* -------------------------------------------------------------------------- */
-async function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    try {
-      const registration = await navigator.serviceWorker.register("./sw.js", {
-        scope: "./",
-      });
-      console.log("[SW] Enregistré :", registration.scope);
-    } catch (err) {
-      console.error("[SW] Échec de l’enregistrement :", err);
-      showNetworkError("Mode hors ligne indisponible.");
-    }
+
+// ---------------------------------------------------------------------------
+//  State & Configuration
+// ---------------------------------------------------------------------------
+const PLAYER_NAME_KEY = 'youthPulsePlayerName';
+const DEFAULT_PLAYER_NAME = 'Joueur';
+
+// Récupère ou définit le nom du joueur (stocké localement)
+let playerName = (() => {
+  try {
+    return localStorage.getItem(PLAYER_NAME_KEY) || DEFAULT_PLAYER_NAME;
+  } catch (e) {
+    return DEFAULT_PLAYER_NAME;
   }
+})();
+
+// Référence au conteneur principal pour les notifications toast
+const toastContainer = document.createElement('div');
+toastContainer.className = 'toast-container';
+toastContainer.setAttribute('aria-live', 'polite');
+toastContainer.setAttribute('aria-atomic', 'true');
+document.body.appendChild(toastContainer);
+
+// ---------------------------------------------------------------------------
+//  Service Worker – Fallback hors ligne pour les pages essentielles
+// ---------------------------------------------------------------------------
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker
+    .register('./sw.js')
+    .catch(err => utils.showNetworkError('Échec de l’enregistrement du Service Worker : ' + err));
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Routing – Hash based navigation                                           */
-/* -------------------------------------------------------------------------- */
-const SECTION_IDS = [
-  "home",
-  "game",
-  "badges",
-  "leaderboard",
-  "videos",
-  "memes",
-  "share",
-  "offline",
-];
+// ---------------------------------------------------------------------------
+//  Gestionnaire d’erreurs global – affiche un message d’erreur réseau via utils
+// ---------------------------------------------------------------------------
+window.addEventListener('error', event => {
+  console.error('Erreur globale capturée :', event.error);
+  utils.showNetworkError('Une erreur inattendue est survenue. Veuillez réessayer plus tard.');
+});
 
-const sections = {};
-SECTION_IDS.forEach((id) => {
+// ---------------------------------------------------------------------------
+//  Affichage des sections – Masque toutes les sections et affiche celle demandée
+// ---------------------------------------------------------------------------
+function hideAllSections() {
+  const sections = document.querySelectorAll('section[id]');
+  sections.forEach(sec => {
+    sec.style.display = 'none';
+    sec.setAttribute('aria-hidden', 'true');
+  });
+}
+
+function showSection(id) {
   const el = document.getElementById(id);
-  if (el) sections[id] = el;
-});
-
-function showSection(hash) {
-  const target = hash.replace("#", "") || "home";
-  Object.values(sections).forEach((sec) => sec.hidden = true);
-  if (sections[target]) {
-    sections[target].hidden = false;
-    window.scrollTo(0, 0);
+  if (el) {
+    el.style.display = 'block';
+    el.setAttribute('aria-hidden', 'false');
   }
-  // Trigger section‑specific initialization
-  if (target === "badges") renderBadges();
-  if (target === "leaderboard") renderLeaderboard();
-  if (target === "videos") renderVideoFeed();
-  if (target === "memes") renderMemeEditor();
 }
 
-window.addEventListener("hashchange", () => showSection(window.location.hash));
-showSection(window.location.hash);
-
-/* -------------------------------------------------------------------------- */
-/*  Global Error Handling                                                     */
-/* -------------------------------------------------------------------------- */
-window.addEventListener("error", (evt) => {
-  console.error("[Global] Erreur non gérée :", evt.error);
-  showNetworkError("Une erreur inattendue s’est produite.");
-});
-window.addEventListener("unhandledrejection", (evt) => {
-  console.error("[Global] Promesse rejetée :", evt.reason);
-  showNetworkError("Une erreur asynchrone s’est produite.");
-});
-
-/* -------------------------------------------------------------------------- */
-/*  Home – Start Game Button                                                  */
-/* -------------------------------------------------------------------------- */
-const startGameBtn = document.getElementById("startGameBtn");
-if (startGameBtn) {
-  startGameBtn.addEventListener("click", async () => {
-    window.location.hash = "#game";
-    // The game module will be started by the game section’s own logic
-  });
+// ---------------------------------------------------------------------------
+//  Notifications toast – affiche un message avec un horodatage
+// ---------------------------------------------------------------------------
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+  toast.textContent = `${new Date().toLocaleString()} – ${message}`;
+  toastContainer.appendChild(toast);
+  // Supprime automatiquement le toast après 3 secondes
+  setTimeout(() => toast.remove(), 3000);
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Game Section – Delegated to game.js                                       */
-/* -------------------------------------------------------------------------- */
-const restartGameBtn = document.getElementById("restartGameBtn");
-if (restartGameBtn) {
-  restartGameBtn.addEventListener("click", () => {
-    resetGame();
-    startGame(onGameComplete);
-  });
-}
-
-/* Callback when the mini‑game finishes */
-async function onGameComplete(context) {
-  // context: { score, durationSec, gameCompleted }
-  const timestamp = new Date().toLocaleString("fr-FR");
-  showToast(`Jeu terminé ! Score : ${context.score} – ${timestamp}`);
-
-  // Persist score
+// ---------------------------------------------------------------------------
+//  Gestion de la fin de partie – débloque les badges, met à jour le score et le tableau des leaders
+// ---------------------------------------------------------------------------
+async function onGameCompleted(context) {
   try {
-    await setScore(context.score);
-    await addLeaderboardEntry("Joueur", context.score);
-  } catch (err) {
-    console.error("Échec sauvegarde score :", err);
-  }
+    // Met à jour le score dans la base de données principale
+    await dbModule.setScore(context.score);
 
-  // Badge unlocking
-  try {
-    await checkAndUnlockBadges(context);
+    // Ajoute une entrée au tableau des leaders avec le nom du joueur et le score
+    await dbModule.addLeaderboardEntry(playerName, context.score);
+
+    // Vérifie chaque badge et débloque ceux dont la condition est remplie
+    for (const badge of badgesModule.BADGES_CATALOG) {
+      if (badge.condition && !await isBadgeUnlocked(badge.id)) {
+        if (badge.condition(context)) {
+          await badgesModule.setBadgeUnlocked(badge.id, context);
+          showToast(`Badge débloqué : ${badge.name}`);
+        }
+      }
+    }
+
+    // Affiche le toast de completion avec horodatage
+    showToast('Jeu terminé !');
+
+    // Rafraîchit le panneau des badges pour refléter le nouveau badge
+    renderBadgesPanel();
   } catch (err) {
-    console.error("Échec vérification badges :", err);
+    console.error('Erreur lors du traitement de la fin de partie :', err);
+    utils.showNetworkError('Impossible de sauvegarder les résultats du jeu.');
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Videos – Render Testimonials                                              */
-/* -------------------------------------------------------------------------- */
-function renderVideoFeed() {
-  const feed = document.getElementById("videoFeed");
-  if (!feed) return;
-  feed.innerHTML = "";
-  data.testimonies.forEach((t) => {
-    const article = document.createElement("article");
-    article.className = "video-card";
-    article.innerHTML = `
-      <div class="video-wrapper" role="region" aria-label="Témoignage de ${t.author}">
-        <video controls preload="none" poster="img/poster-${t.id}.jpg" aria-label="${t.quote}">
-          <source src="video/${t.id}.webm" type="video/webm">
-          <source src="video/${t.id}.mp4" type="video/mp4">
-          Votre navigateur ne prend pas en charge la vidéo HTML5.
-        </video>
-      </div>
-      <div class="video-meta">
-        <p class="video-quote">« ${t.quote} »</p>
-        <p class="video-author">${t.author}</p>
-        <p class="video-context">${t.context}</p>
+// ---------------------------------------------------------------------------
+//  Badge helper – vérifie si un badge est déjà débloqué
+// ---------------------------------------------------------------------------
+async function isBadgeUnlocked(badgeId) {
+  const unlocked = await badgesModule.getUnlockedBadgeIds();
+  return unlocked.includes(badgeId);
+}
+
+// ---------------------------------------------------------------------------
+//  Rendu du panneau des badges – utilise le catalogue de badges et la liste des badges débloqués
+// ---------------------------------------------------------------------------
+async function renderBadgesPanel() {
+  const listEl = document.getElementById('badgesList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  const unlockedSet = new Set(await badgesModule.getUnlockedBadgeIds());
+
+  badgesModule.BADGES_CATALOG.forEach(badge => {
+    const li = document.create probably want to use backticks for HTML template.
+    const li = document.createElement('li');
+    li.className = 'badge-item';
+    li.setAttribute('role', 'listitem');
+    if (unlockedSet.has(badge.id)) {
+      li.classList.add('unlocked');
+    }
+    li.innerHTML = `
+      <span class="badge-icon" aria-hidden="true">${badge.icon}</span>
+      <div class="badge-info">
+        <h3 class="badge-name">${badge.name}</h3>
+        <p class="badge-desc">${badge.description}</p>
       </div>
     `;
-    feed.appendChild(article);
+    listEl.appendChild(li);
   });
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Memes – Render Editor                                                     */
-/* -------------------------------------------------------------------------- */
-function renderMemeEditor() {
-  const editor = document.getElementById("memeEditor");
-  if (!editor) return;
-  editor.innerHTML = `
-    <div class="meme-editor" role="application" aria-label="Générateur de mèmes">
-      <select id="memeTemplate" aria-label="Choisir un modèle">
-        <option value="">– Modèle –</option>
-        ${data.memeTemplates
-          .map((tmpl) => `<option value="${tmpl.id}">${tmpl.top} / ${tmpl.bottom}</option>`)
-          .join("")}
-      </select>
-      <div class="meme-preview" aria-live="polite">
-        <img id="memeImage" src="" alt="Aperçu du mème" hidden>
-        <div id="memeTopText" class="meme-text top" aria-hidden="true"></div>
-        <div id="memeBottomText" class="meme-text bottom" aria-hidden="true"></div>
-      </div>
-      <div class="meme-controls">
-        <label for="topText">Texte du haut</label>
-        <input type="text" id="topText" maxlength="40" placeholder="Texte du haut" aria-label="Texte du haut">
-        <label for="bottomText">Texte du bas</label>
-        <input type="text" id="bottomText" maxlength="40" placeholder="Texte du bas" aria-label="Texte du bas">
-        <button type="button" id="generateMemeBtn" class="btn-primary">Générer</button>
-      </div>
-    </div>
-  `;
+// ---------------------------------------------------------------------------
+//  Rendu du tableau des leaders – utilise dbModule.getLeaderboardEntries()
+// ---------------------------------------------------------------------------
+async function renderLeaderboardPanel() {
+  const listEl = document.getElementById('leaderboardList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
 
-  const templateSelect = document.getElementById("memeTemplate");
-  const topInput = document.getElementById("topText");
-  const bottomInput = document.getElementById("bottomText");
-  const generateBtn = document.getElementById("generateMemeBtn");
-  const previewImg = document.getElementById("memeImage");
-  const topTextEl = document.getElementById("memeTopText");
-  const bottomTextEl = document.getElementById("memeBottomText");
-
-  let currentTemplate = null;
-
-  templateSelect.addEventListener("change", () => {
-    const id = templateSelect.value;
-    currentTemplate = data.memeTemplates.find((t) => t.id === id) || null;
-    if (currentTemplate) {
-      topInput.value = currentTemplate.top;
-      bottomInput.value = currentTemplate.bottom;
-      updatePreview();
-    } else {
-      topInput.value = "";
-      bottomInput.value = "";
-      previewImg.hidden = true;
-      topTextEl.textContent = "";
-      bottomTextEl.textContent = "";
-    }
-  });
-
-  [topInput, bottomInput].forEach((input) =>
-    input.addEventListener("input", updatePreview)
-  );
-
-  function updatePreview() {
-    if (!currentTemplate) return;
-    previewImg.src = currentTemplate.image;
-    previewImg.hidden = false;
-    topTextEl.textContent = topInput.value || currentTemplate.top;
-    bottomTextEl.textContent = bottomInput.value || currentTemplate.bottom;
+  const entries = await dbModule.getLeaderboardEntries();
+  if (entries.length === 0) {
+    listEl.innerHTML = '<li class="empty">Aucune entrée pour le moment.</li>';
+    return;
   }
 
-  generateBtn.addEventListener("click", () => {
-    if (!currentTemplate) return;
-    const memeData = {
-      image: currentTemplate.image,
-      top: topInput.value || currentTemplate.top,
-      bottom: bottomInput.value || currentTemplate.bottom,
-    };
-    // Store for sharing
-    sessionStorage.setItem("currentMeme", JSON.stringify(memeData));
-    showToast("Mème généré ! Prêt à partager.");
+  entries.forEach((entry, idx) => {
+    const li = document.createElement('li');
+    li.className = 'leaderboard-entry';
+    li.setAttribute('role', 'listitem');
+    li.innerHTML = `
+      <span class="rank">${idx + 1}.</span>
+      <span class="player">${escapeHtml(entry.name)}</span>
+      <span class="score">${entry.score}</span>
+    `;
+    listEl.appendChild(li);
   });
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Share – Wire up share buttons                                             */
-/* -------------------------------------------------------------------------- */
-const shareMemeBtn = document.getElementById("shareMemeBtn");
-if (shareMemeBtn) {
-  shareMemeBtn.addEventListener("click", () => {
-    const memeJson = sessionStorage.getItem("currentMeme");
-    if (!memeJson) {
-      showNetworkError("Aucun mème à partager. Générez‑en un d’abord.");
-      return;
-    }
-    const meme = JSON.parse(memeJson);
-    shareMeme(meme);
-  });
+// ---------------------------------------------------------------------------
+//  Utile – échappe le HTML dans les chaînes affichées
+// ---------------------------------------------------------------------------
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
 }
 
-// Initialize share module (sets up WhatsApp/Facebook/TikTok buttons)
-setupShare();
+// ---------------------------------------------------------------------------
+//  Sections – initialise le contenu et les écouteurs d’événements pour chaque page
+// ---------------------------------------------------------------------------
 
-/* -------------------------------------------------------------------------- */
-/*  Offline / Settings – Export Data                                          */
-/* -------------------------------------------------------------------------- */
-const offlineSection = document.getElementById("offline");
-if (offlineSection) {
-  offlineSection.innerHTML = `
-    <section aria-labelledby="offlineTitle">
-      <h2 id="offlineTitle">Mode hors ligne & Données</h2>
-      <p>L’application fonctionne hors ligne grâce au Service Worker.</p>
-      <button type="button" id="exportDataBtn" class="btn-secondary">Exporter mes données (JSON)</button>
-      <pre id="exportOutput" aria-live="polite" hidden></pre>
-    </section>
-  `;
-  const exportBtn = document.getElementById("exportDataBtn");
-  const output = document.getElementById("exportOutput");
-  exportBtn.addEventListener("click", async () => {
-    try {
-      const json = await exportData();
-      output.textContent = json;
-      output.hidden = false;
-      // Trigger download
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "youthpulse-data.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Données exportées et téléchargées.");
-    } catch (err) {
-      console.error("Export failed:", err);
-      showNetworkError("Impossible d’exporter les données.");
-    }
-  });
+// Accueil – rien de spécial, juste afficher
+function showHome() {
+  showSection('home');
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Boot – Initialize DB and load persisted data                              */
-/* -------------------------------------------------------------------------- */
-async function bootstrap() {
-  try {
-    await openDb();
-    // Load score (if any) – could be used to pre‑fill UI
-    const score = await getScore();
-    if (score) console.log("[Boot] Score chargé :", score);
-    // Badges are rendered on demand in renderBadges()
-    // Leaderboard rendered on demand
-  } catch (err) {
-    console.error("[Boot] Échec initialisation DB :", err);
-    showNetworkError("Impossible d’accéder au stockage local.");
+// Jeu – charge le module jeu et initialise l’interface
+function showGame() {
+  showSection('game');
+  gameModule.initGameUI?.();
+  // Attache le bouton de démarrage si présent
+  const startBtn = document.getElementById('startGameBtn');
+  if (startBtn) {
+    startBtn.addEventListener('click', async () => {
+      try {
+        const ctx = await gameModule.startGame();
+        // Le module jeu appelle onGameCompleted lorsque le jeu se termine
+        if (typeof ctx === 'object') {
+          onGameCompleted(ctx);
+        }
+      } catch (err) {
+        console.error('Erreur lors du démarrage du jeu :', err);
+        utils.showNetworkError('Impossible de démarrer le mini‑jeu.');
+      }
+    });
+  }
+  // Bouton de redémarrage
+  const restartBtn = document.getElementById('restartGameBtn');
+  if (restartBtn) {
+    restartBtn.addEventListener('click', () => {
+      gameModule.restartGame?.();
+    });
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Start                                                                     */
-/* -------------------------------------------------------------------------- */
-registerServiceWorker();
-bootstrap();
+// Panneau des badges – affiche la liste des badges
+async function showBadges() {
+  showSection('badges');
+  await renderBadgesPanel();
+}
+
+// Tableau des leaders – affiche le classement
+async function showLeaderboard() {
+  showSection('leaderboard');
+  await renderLeaderboardPanel();
+}
+
+// Flux vidéo – affiche les témoignages statiques
+function showVideos() {
+  showSection('videos');
+  const feedEl = document.getElementById('videoFeed');
+  if (!feedEl) return;
+  feedEl.innerHTML = '';
+
+  data.testimonies.forEach(item => {
+    const article = document.createElement('article');
+    article.className = 'video-item';
+    article.setAttribute('role', 'listitem');
+    article.innerHTML = `
+      <div class="video-placeholder" aria-label="Vidéo de ${escapeHtml(item.author)}">
+        <img src="img/placeholder-video.jpg" alt="" />
+      </div>
+      <div class="video-info">
+        <p class="quote">${escapeHtml(item.quote)}</p>
+        <p class="author">${escapeHtml(item.author)}</p>
+        <p class="context">${escapeHtml(item.context)}</p>
+      </div>
+    `;
+    feedEl.appendChild(article);
+  });
+}
+
+// Générateur de mèmes – charge les modèles et initialise l’éditeur
+function showMemes() {
+  showSection('memes');
+  shareModule.initMemeEditor?.(data.memeTemplates);
+}
+
+// Partage – configure le bouton de partage
+function showShare() {
+  showSection('share');
+  shareModule.initShareUI?.();
+}
+
+// ---------------------------------------------------------------------------
+//  Navigation – réagit aux changements de hash et charge la section appropriée
+// ---------------------------------------------------------------------------
+function navigate() {
+  const hash = window.location.hash.slice(1) || 'home';
+  hideAllSections();
+  switch (hash) {
+    case 'home': showHome(); break;
+    case 'game': showGame(); break;
+    case 'badges': showBadges(); break;
+    case 'leaderboard': showLeaderboard(); break;
+    case 'videos': showVideos(); break;
+    case 'memes': showMemes(); break;
+    case 'share': showShare(); break;
+    default: showHome();
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  Initialisation – configure la navigation et charge la section initiale
+// ---------------------------------------------------------------------------
+function init() {
+  // Configure le bouton de partage social (WhatsApp, Facebook, TikTok) via shareModule
+  const shareButtons = document.getElementById('shareButtons');
+  if (shareButtons) {
+    shareModule.attachShareButtons?.(shareButtons);
+  }
+
+  // Configure le générateur de mèmes (prévisualisation, téléchargement)
+  const memeEditor = document.getElementById('memeEditor');
+  if (memeEditor) {
+    shareModule.attachMemeEditor?.(memeEditor);
+  }
+
+  // Configure le bouton de partage du meme
+  const shareMemeBtn = document.getElementById('shareMemeBtn');
+  if (shareMemeBtn) {
+    shareMemeBtn.addEventListener('click', () => {
+      shareModule.shareCurrentMeme?.();
+    });
+  }
+
+  // Réagit aux changements de hash
+  window.addEventListener('hashchange', navigate);
+  // Charge la section initiale
+  navigate();
+}
+
+// Démarre l’application lorsque le DOM est prêt
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
