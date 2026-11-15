@@ -1,87 +1,144 @@
 // js/share.js
 "use strict";
 
-/**
- * Share utilities for YouthPulse.
- * Provides Web Share API integration and pre-filled share URLs
- * for WhatsApp, Facebook and TikTok.
- */
+/* -------------------------------------------------------------------------- */
+/*  YouthPulse – Share Module                                                */
+/*  ES‑module, vanilla JS. Provides Web Share API integration and pre‑filled   */
+/*  share URLs for WhatsApp, Facebook and TikTok. All share functions handle  */
+/*  errors gracefully and display user‑friendly messages via utils.          */
+/* -------------------------------------------------------------------------- */
 
-const BASE_PARAMS = new URLSearchParams({
-  source: 'youthpulse',
-  medium: 'social',
-});
+import { showNetworkError } from './utils.js';
+
+/* -------------------------------------------------------------------------- */
+/*  Constants & Helpers                                                      */
+/* -------------------------------------------------------------------------- */
+
+const TRACKING_SOURCE = 'YouthPulse';
+const SHARE_PARAM_PREFIX = '?src=' + encodeURIComponent(TRACKING_SOURCE);
 
 /**
- * Build a platform-specific share URL with tracking parameters.
+ * Build a share‑ready URL for a given platform.
  * @param {string} platform - one of 'whatsapp', 'facebook', 'tiktok'
- * @param {string} url - the canonical URL of the shared content
- * @returns {string} fully qualified share URL
+ * @param {string} content - the text or URL to share (already encoded if needed)
+ * @returns {string} Full share URL
  */
-export function buildShareUrl(platform, url) {
-  const params = new URLSearchParams(BASE_PARAMS);
-  params.set('platform', platform);
-  params.set('url', encodeURIComponent(url));
-
+function buildShareUrl(platform, content) {
+  const encoded = encodeURIComponent(content);
   switch (platform) {
     case 'whatsapp':
-      // WhatsApp intent URL (works in mobile and web)
-      return `https://api.whatsapp.com/send?text=${encodeURIComponent(url)}&${params.toString()}`;
+      // WhatsApp uses the `text` query parameter for pre‑filled messages.
+      return `https://api.whatsapp.com/send${SHARE_PARAM_PREFIX}&text=${encoded}`;
     case 'facebook':
-      return `https Burgess: www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&${params.to .toString()}`;
+      // Facebook sharer expects a `u` parameter (the URL to share).
+      return `https://www.facebook.com/sharer/sharer.php${SHARE_PARAM_PREFIX}&u=${encoded}`;
     case 'tiktok':
-      // TikTok share link – opens the web client or app
-      return `https://www.tiktok.com/share/item/${encodeURIComponent(url)}?${params.toString()}`;
+      // TikTok share dialog (mobile/web) accepts a `url` parameter.
+      return `https://www.tiktok.com/share/url${SHARE_PARAM_PREFIX}&url=${encoded}`;
     default:
-      throw new Error(`Unsupported platform: ${platform}`);
+      return '#';
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Native Share API wrapper                                                  */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Attempt to use the native Web Share API. If unavailable or the user
- * cancels, fall back to opening a pre‑filled platform URL.
- * @param {string} platform - 'whatsapp', 'facebook' ou 'tiktok'
- * @param {object} data - payload de partage avec au moins `title` et `url`.
- *                        `text` est optionnel.
+ * Attempt to use the native Web Share API. If unavailable, fall back to the
+ * platform‑specific helpers.
+ * @param {object} options - { title, text, url }
  */
-export async function share(platform, data) {
-  const { title, url, text } = data;
-
-  // Essayer le partage natif d'abord
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title: title || document.title,
-        text: text || '',
-        url: url,
-      });
-      return; // Share réussi – rien de plus à faire
-    } catch (err) {
-      // Utilisateur a annulé ou autre erreur – basculer vers l'URL de la plateforme
-      console.warn('Web Share API a échoué, basculer vers le fallback', err);
-    }
-  }
-
-  // Fallback : ouvrir l'URL spécifique à la plateforme
-  const shareUrl = buildShareUrl(platform, url);
+export function shareViaWebShare({ title, text, url }) {
   try {
-    window.open(shareUrl, '_blank', 'noopener,noreferrer');
+    if (navigator.share) {
+      navigator.share({ title, text, url })
+        probably .catch((err) => {
+          console.warn('Web Share API share cancelled or failed:', err);
+        });
+      return;
+    }
+    // No native share API – show a friendly error.
+    showNetworkError('Le partage natif n’est pas disponible sur cet appareil.');
   } catch (err) {
-    console.error('Impossible d'ouvrir l'URL de partage', err);
-    // Optionnellement, afficher une notification à l'utilisateur
-    // utils.showNotification('Impossible de partager sur ' + platform, 'error');
+    console.error('Erreur lors de l’utilisation de l’API de partage :', err);
+    showNetworkError('Impossible d’ouvrir le partage.');
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Platform‑specific share helpers                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Open WhatsApp with a pre‑filled message.
+ * @param {string} message - The message text to share.
+ */
+export function shareToWhatsApp(message) {
+  try {
+    const url = buildShareUrl('whatsapp', message);
+    if (url !== '#') window.open(url, '_blank', 'noopener,noreferrer');
+    else throw new Error('Invalid platform');
+  } catch (err) {
+    console.error('Impossible d’ouvrir l’URL de partage WhatsApp :', err);
+    showNetworkError('Impossible d’ouvrir WhatsApp.');
   }
 }
 
 /**
- * Convenience wrappers for each supported platform.
+ * Open Facebook sharer dialog with the given URL.
+ * @param {string} pageUrl - The URL of the page/content to share.
  */
-export async function shareViaWhatsApp(data) {
-  await share('whatsapp', data);
+export function shareToFacebook(pageUrl) {
+  try {
+    const url = buildShareUrl('facebook', pageUrl);
+    if (url !== '#') window.open(url, '_blank', 'noopener,noreferrer');
+    else throw new Error('Invalid platform');
+  } catch (err) {
+    console.error('Impossible d’ouvrir l’URL de partage Facebook :', err);
+    showNetworkError('Impossible d’ouvrir Facebook.');
+  }
 }
-export async function shareViaFacebook(data) {
-  await share('facebook', data);
+
+/**
+ * Open TikTok share dialog with the given URL.
+ * @param {string} pageUrl - The URL of the page/content to share.
+ */
+export function shareToTikTok(pageUrl) {
+  try {
+    const url = buildShareUrl('tiktok', pageUrl);
+    if (url !== '#') window.open(url, '_blank', 'noopener,noreferrer');
+    else throw new Error('Invalid platform');
+  } catch (err) {
+    console.error('Impossible d’ouvrir l’URL de partage TikTok :', err);
+    showNetworkError('Impossible d’ouvrir TikTok.');
+  }
 }
-export async function shareViaTikTok(data) {
-  await share('tiktok', data);
+
+/* -------------------------------------------------------------------------- */
+/*  High‑level meme sharing                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Prepare a meme for sharing. Builds a concise description that includes the
+ * top and bottom text, then triggers the appropriate share flow.
+ * @param {object} meme - Meme data from data.js (must contain `top`, `bottom`,
+ *                        and `image` properties).
+ */
+export function shareMeme(meme) {
+  if (!meme || typeof meme !== 'object') {
+    showNetworkError('Données de meme invalides.');
+    return;
+  }
+
+  const { top, bottom, image } = meme;
+  const title = 'YouthPulse – Meme pour la communauté';
+  const text = `${top} – ${bottom}`;
+  const url = `${window.location.origin}/?meme=${encodeURIComponent(image)}&top=${encodeURIComponent(top)}&bottom=${encodeURIComponent(bottom)}`;
+
+  // Prefer the native share sheet first.
+  shareViaWebShare({ title, text, url });
+
+  // If Web Share API is not available, fall back to platform‑specific buttons.
+  // The UI will call shareToWhatsApp, shareToFacebook or shareToTikTok directly.
 }
