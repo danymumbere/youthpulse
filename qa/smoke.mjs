@@ -1,0 +1,20 @@
+import { chromium } from 'playwright';
+import { createServer } from 'http';
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { execSync } from 'child_process';
+import path from 'path';
+const E = [], err = m => { E.push(m); console.log('::error::' + m); };
+const walk = d => readdirSync(d).flatMap(f => f === 'node_modules' || f[0] === '.' ? [] : statSync(d + '/' + f).isDirectory() ? walk(d + '/' + f) : [d + '/' + f]);
+for (const f of walk('.').filter(f => f.endsWith('.js'))) try { execSync('node --check ' + f, { stdio: 'pipe' }); } catch (e) { err(f.slice(2) + ': erreur de syntaxe ' + String(e.stderr).split('\n').find(l => /Error/.test(l))); }
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml' };
+const srv = createServer((q, s) => { const u = q.url.split('?')[0], p = '.' + (u === '/' ? '/index.html' : u); if (!existsSync(p)) { s.statusCode = 404; return s.end(); } s.setHeader('content-type', mime[path.extname(p)] || 'application/octet-stream'); s.end(readFileSync(p)); }).listen(8123);
+const b = await chromium.launch(), pg = await b.newPage({ viewport: { width: 390, height: 800 } });
+pg.on('pageerror', e => err('js/app.js: erreur JS à l’exécution : ' + e.message));
+pg.on('console', m => m.type() === 'error' && !/Failed to load resource|net::ERR/.test(m.text()) && err('js/app.js: console.error : ' + m.text()));
+await pg.goto('http://localhost:8123/'); await pg.waitForTimeout(2000);
+for (const f of JSON.parse(readFileSync('qa/features.json', 'utf8'))) if (!(await pg.locator('[data-feature="' + f.id + '"]').count())) err('index.html: fonction ' + f.id + ' absente (data-feature)');
+for (const bt of await pg.locator('main button:visible').all()) await bt.click({ timeout: 1500 }).catch(() => {});
+await pg.waitForTimeout(800);
+if ((await pg.innerText('body')).length < 400) err('index.html: page quasi vide');
+if (await pg.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2)) err('style.css: débordement horizontal sur mobile');
+await b.close(); srv.close(); process.exit(E.length ? 1 : 0);
