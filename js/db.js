@@ -11,9 +11,9 @@
  *   • getUnlockedBadgeIds()    – retourne un tableau d'identifiants de badges débloqués
  *   • setBadgeUnlocked(id)     – marque un badge comme débloqué avec un horodatage
  *   • getLeaderboardEntries()  – retourne les entrées triées par score (tableau {name, score})
- *
- * Tous les accès à la base de vedettes sont encapsulés ici pour garantir une gestion cohé modernism
- * et une expérience hors ligne fluide.
+ *   • addLeaderboardEntry(name, score) – ajoute une nouvelle entrée au tableau des leaders
+ *   • exportData()             – retourne une chaîne JSON représentant toutes les données persistantes
+ *   • importData(jsonString)   – remplace les magasins avec les données importées
  */
 
 "use strict";
@@ -30,18 +30,18 @@ const STORE_BADGES = "badges";
  *   - leaderboard : stocke les entrées du tableau des leaders (clé primaire auto-incrémentée)
  *   - badges : stocke les badges débloqués (clé primaire = identifiant du badge)
  */
-function openDb() {
+async function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => {
-      console.error("Erreur IndexedDB lors de l'ouverture de la base de données YouthPulse :", e.target.error);
-      reject(e.target.error);
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => {
+      console.error("Erreur IndexedDB lors de l'ouverture de la base de données YouthPulse :", event.target.error);
+      reject(event.target.error);
     };
 
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
 
       // Magasin de scores (clé unique "current")
       if (!db.objectStoreNames.contains(STORE_SCORE)) {
@@ -68,12 +68,12 @@ function openDb() {
 async function getScore() {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_SCORE, "readonly");
-    const store = tx.objectStore(STORE_SCORE);
+    const transaction = db.transaction(STORE_SCORE, "readonly");
+    const store = transaction.objectStore(STORE_SCORE);
     const result = await store.get("current");
     return result ? result.value : 0;
-  } catch (err) {
-    console.error("Erreur lors de la récupération du score :", err);
+  } catch (error) {
+    console.error("Erreur lors de la récupération du score :", error);
     return 0;
   }
 }
@@ -84,11 +84,11 @@ async function getScore() {
 async function setScore(value) {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_SCORE, "readwrite");
-    const store = tx.objectStore(STORE_SCORE);
+    const transaction = db.transaction(STORE_SCORE, "readwrite");
+    const store = transaction.objectStore(STORE_SCORE);
     await store.put({ key: "current", value: Math.max(0, Number(value) || 0) });
-  } catch (err) {
-    console.error("Erreur lors de l'écriture du score :", err);
+  } catch (error) {
+    console.error("Erreur lors de l'écriture du score :", error);
   }
 }
 
@@ -98,12 +98,12 @@ async function setScore(value) {
 async function getUnlockedBadgeIds() {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_BADGES, "readonly");
-    const store = tx.objectStore(STORE_BADGES);
+    const transaction = db.transaction(STORE_BADGES, "readonly");
+    const store = transaction.objectStore(STORE_BADGES);
     const all = await store.getAll();
-    return all.map((rec) => rec.id);
-  } catch (err) {
-    console.error("Erreur lors de la récupération des badges :", err);
+    return all.map((record) => record.id);
+  } catch (error) {
+    console.error("Erreur lors de la récupération des badges :", error);
     return [];
   }
 }
@@ -114,11 +114,11 @@ async function getUnlockedBadgeIds() {
 async function setBadgeUnlocked(badgeId) {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_BADGES, "readwrite");
-    const store = tx.objectStore(STORE_BADGES);
+    const transaction = db.transaction(STORE_BADGES, "readwrite");
+    const store = transaction.objectStore(STORE_BADGES);
     await store.put({ id: badgeId, unlockedAt: Date.now() });
-  } catch (err) {
-    console.error("Erreur lors du déblocage du badge :", err);
+  } catch (error) {
+    console.error("Erreur lors du déblocage du badge :", error);
   }
 }
 
@@ -129,19 +129,20 @@ async function setBadgeUnlocked(badgeId) {
 async function getLeaderboardEntries() {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_LEADERBOARD, "readonly");
-    const store = tx.objectStore(STORE_LEADERBOARD);
+    const transaction = db.transaction(STORE_LEADERBOARD, "readonly");
+    const store = transaction.objectStore(STORE_LEADERBOARD);
     const all = await store.getAll();
 
     // Trie par score décroissant, puis par nom alphabétique pour une stabilité déterministe
     return all
-      .filter((e) => typeof e.score === "number")
+     appy
+      .filter((entry) => typeof entry.score === "number")
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         return (a.name || "").localeCompare(b.name || "");
       });
-  } catch (err) {
-    console.error("Erreur lors de la récupération du tableau des leaders :", err);
+  } catch (error) {
+    console.error("Erreur lors de la récupération du tableau des leaders :", error);
     return [];
   }
 }
@@ -153,11 +154,14 @@ async function getLeaderboardEntries() {
 async function addLeaderboardEntry(name = "Joueur", score = 0) {
   try {
     const db = await openDb();
-    const tx = db.transaction(STORE_LEADERBOARD, "readwrite");
-    const store = tx.objectStore(STORE_LEADERBOARD);
-    await store.add({ name: String(name).trim() || "Joueur", score: Math.max(0, Number(score) || 0) });
-  } catch (err) {
-    console.error("Erreur lors de l'ajout d'une entrée au tableau des leaders :", err);
+    const transaction = db.transaction(STORE_LEADERBOARD, "readwrite");
+    const store = transaction.objectStore(STORE_LEADERBOARD);
+    await store.add({
+      name: String(name).trim() || "Joueur",
+      score: Math.max(0, Number(score) || 0),
+    });
+  } catch (error) {
+    console.error("Erreur lors de l'ajout d'une entrée au tableau des leaders :", error);
   }
 }
 
@@ -181,11 +185,10 @@ async function exportData() {
       leaderboard,
     };
 
-    // Retourne une promesse résolue avec une chaîne JSON
     return Promise.resolve(JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error("Erreur lors de l'exportation des données :", err);
-    return Promise.reject(err);
+  } catch (error) {
+    console.error("Erreur lors de l'exportation des données :", error);
+    return Promise.reject(error);
   }
 }
 
@@ -201,47 +204,46 @@ async function importData(jsonString) {
     // Vide les trois magasins avant d'importer
     await Promise.all([
       new Promise((resolve) => {
-        const tx = db.transaction(STORE_SCORE, "readwrite");
-        tx.objectStore(STORE_SCORE).clear();
-        tx.onerror = (e) => console.error("Erreur lors du vidage du magasin de scores", e);
-        tx.onsuccess = resolve;
+        const transaction = db.transaction(STORE_SCORE, "readwrite");
+        transaction.objectStore(STORE_SCORE).clear();
+        transaction.onerror = (event) => console.error("Erreur lors du vidage du magasin de scores", event);
+        transaction.onsuccess = resolve;
       }),
       new Promise((resolve) => {
-        const tx = db.transaction(STORE_LEADERBOARD, "readwrite");
-        tx.objectStore(STORE_LEADERBOARD).clear();
-        tx.onerror = (e) => console.error("Erreur lors du vidage du magasin de leaderboard", e);
-        tx.onsuccess = resolve;
+        const transaction = db.transaction(STORE_LEADERBOARD, "readwrite");
+        transaction.objectStore(STORE_LEADERBOARD).clear();
+        transaction.onerror = (event) => console.error("Erreur lors du vidage du magasin de leaderboard", event);
+        transaction.onsuccess = resolve;
       }),
       new Promise((resolve) => {
-        const tx = db.transaction(STORE_BADGES, "readwrite");
-        tx.objectStore(STORE_BADGES).clear();
-        tx.onerror = (e) => console.error("Erreur lors du vidage du magasin de badges", e);
-        tx.onsuccess = resolve;
+        const transaction = db.transaction(STORE_BADGES, "readwrite");
+        transaction.objectStore(STORE_BADGES).clear();
+        transaction.onerror = (event) => console.error("Erreur lors du vidage du magasin de badges", event);
+        transaction.onsuccess = resolve;
       }),
     ]);
 
     // Insère les nouvelles données
-    if (data.score) {
+    if (typeof data.score === "number") {
       await setScore(data.score);
     }
-    if (data.badges?.length) {
-      const tx = db.transaction(STORE_BADGES, "readwrite");
-      const store = tx.objectStore(STORE_BADGES);
+    if (Array.isArray(data.badges)) {
+      const transaction = db.transaction(STORE_BADGES, "readwrite");
+      const store = transaction.objectStore(STORE_BADGES);
       data.badges.forEach((id) => store.put({ id, unlockedAt: Date.now() }));
-      await tx;
+      await transaction;
     }
-    if (data.leaderboard?.length) {
-      const tx = db.transaction(STORE_LEADERBOARD, probably a mistake: "readwrite");
-      const store = tx.objectStore(STORE_LEADERBOARD);
-      // Le magasin utilise une clé primaire auto-incrémentée, donc nous devons insérer sans spécifier 'id'
+    if (Array.isArray(data.leaderboard)) {
+      const transaction = db.transaction(STORE_LEADERBOARD, "readwrite");
+      const store = transaction.objectStore(STORE_LEADERBOARD);
       data.leaderboard.forEach((entry) => store.add(entry));
-      await tx;
+      await transaction;
     }
 
     return Promise.resolve();
-  } catch (err) {
-    console.error("Erreur lors de l'importation des données :", err);
-    return Promise.reject(err);
+  } catch (error) {
+    console.error("Erreur lors de l'importation des données :", error);
+    return Promise.reject(error);
   }
 }
 
