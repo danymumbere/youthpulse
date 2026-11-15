@@ -1,278 +1,305 @@
-/* -------------------------------------------------------------------------- */
-/*  YouthPulse – Mini‑Game Module (game.js)                                   */
-/*  ES‑module, vanilla JS. Provides a 2‑3 minute “Instant Snapshot” mini‑game,   */
-/*  client‑side scoring, badge unlocking, and a completion toast.             */
-/* -------------------------------------------------------------------------- */
-
+// js/game.js
 "use strict";
 
-import { unlockBadge } from "./badges.js";
-import * as utils from "./utils.js";
-import { saveScore } from "./db.js";
+/* -------------------------------------------------------------------------- */
+/*  YouthPulse – Mini‑Game Module                                            */
+/*  ES‑module, vanilla JS. Fournit la logique du jeu instantané de 2 à 3 minutes, */
+/*  le calcul du score, le déverrouillage des badges et l’interface utilisateur       */
+/*  réactive et accessible. Toutes les données sont stockées localement via       */
+/*  IndexedDB (db.js). Le jeu s’arrête automatiquement après 3 minutes et affiche   */
+/*  un toast de fin avec un horodatage.                                        */
+/* -------------------------------------------------------------------------- */
+
+import { setScore, getScore, setBadgeUnlocked, getUnlockedBadgeIds } from './db.js';
+import { BADGES_CATALOG } from './badges.js';
+import { showNetworkError } from './utils.js';
 
 /* -------------------------------------------------------------------------- */
-/* 1. IDs (must match the static HTML)                                        */
+/*  Constantes du jeu – ajustez la durée, les points, les délais si nécessaire.   */
 /* -------------------------------------------------------------------------- */
-const IDS = {
-  HOME: "home",
-  START_GAME_BTN: "startGameBtn",
-  GAME: "game",
-  GAME_PROMPT: "gamePrompt",
-  GAME_AREA: "gameArea", // <canvas> element
-  RESTART_BTN: "restartGameBtn",
-  BADGES: "badges",
-  BADGES_LIST: "badgesList",
-  LEADERBOARD: "leaderboard",
-  LEADERBOARD_LIST: "leaderboardList",
-  VIDEOS: "videos",
-  VIDEO_FEED: "videoFeed",
-  MEMES: "memes",
-  MEME_EDITOR: "memeEditor",
-  SHARE_MEME_BTN: "shareMemeBtn",
-  SHARE: "share",
-  SHARE_BUTTONS: "shareButtons",
-  OFFLINE: "offline",
+const GAME_DURATION_MS = 3 * 60 * 1000; // 3 minutes
+const POINTS_PER_HIT = 10;
+const TARGET_SHOW_MS = 1500;
+const MIN_SPAWN_DELAY_MS = 1000;
+const MAX_SPAWN_DELAY_MS = 3000;
+
+/* -------------------------------------------------------------------------- */
+/*  Référence au DOM – IDs autorisés par le projet.                           */
+/* -------------------------------------------------------------------------- */
+const homeEl = document.getElementById('home');
+const startGameBtnEl = document.getElementById('startGameBtn');
+const gameEl = document.getElementById('game');
+const gamePromptEl = document.getElementById('gamePrompt');
+const gameAreaEl = document.getElementById('gameArea');
+const restartGameBtnEl = document.getElementById('restartGameBtn');
+const badgesListEl = document.getElementById('badgesList');
+
+/* -------------------------------------------------------------------------- */
+/*  État du jeu – persistant pendant une session.                              */
+/* -------------------------------------------------------------------------- */
+const gameState = {
+  startTime: null,          // timestamp du début (ms)
+  score: 0,                 // score actuel
+  gameCompleted: false,     // true lorsque le temps est écoulé
+  targetTimeout: null,      // handle pour masquer la cible
+  gameLoopId: null,         // requestAnimationFrame id
 };
 
 /* -------------------------------------------------------------------------- */
-/* 2. Game configuration & state                                            */
+/*  Initialise une nouvelle partie – réinitialise l’état, affiche l’écran du jeu   */
+/*  et démarre la boucle principale.                                            */
 /* -------------------------------------------------------------------------- */
-const GAME_DURATION_SEC = 180; // 3 minutes max
-const TARGET_RADIUS = 20; // px
-const SCORE_INCREMENT_MIN = 1;
-const SCORE_INCREMENT_MAX = 5;
-
-let secondsElapsed = 0;
-let score = 0;
-let gameActive = false;
-let timerId = null;
-let animationFrameId = null;
-let lastTarget = { x: 0, y: 0 };
-
-/* -------------------------------------------------------------------------- */
-/* 3. Cached DOM elements                                                    */
-/* -------------------------------------------------------------------------- */
-const startBtn = document.getElementById(IDS.START_GAME_BTN);
-const restartBtn = document.getElementById(IDS.RESTART_BTN);
-const gameContainer = document.getElementById(IDS.GAME);
-const gamePrompt = document.getElementById(IDS.GAME_PROMPT);
-const canvas = document.getElementById(IDS.GAME_AREA);
-const ctx = canvas ? canvas.getContext("2d") : null;
-
-/* -------------------------------------------------------------------------- */
-/* 4. Utility helpers                                                       */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Returns a random integer between min and max (inclusive).
- */
-function randomInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/**
- * Generates a new target position that stays fully inside the canvas.
- */
-function generateTarget() {
-  const maxX = canvas.width - TARGET_RADIUS * 2;
-  const maxY = canvas.height - TARGET_RADIUS * 2;
-  lastTarget.x = randomInt(0, maxX) + TARGET_RADIUS;
-  lastTarget.y = randomInt(0, maxY) + TARGET_RADIUS;
-}
-
-/**
- * Draws the current frame: background, target, score & timer.
- */
-function drawFrame() {
-  if (!ctx) return;
-
-  // clear
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // draw target
-  ctx.fillStyle = "#e63946";
-  ctx.beginPath();
-  ctx.arc(lastTarget.x, lastTarget.y, TARGET_RADIUS, 0, Math.PI * 2);
-  ctx.fill();
-
-  // UI text
-  ctx.fillStyle = "#333";
-  ctx.font = "16px sans-serif";
-  ctx.textBaseline = "bottom";
-  ctx.fillText(`Temps : ${secondsElapsed}s`, 10, canvas.height - 10);
-  ctx.fillText(`Score : ${score}`, canvas.width - 80, canvas.height - 10);
-}
-
-/**
- * Shows a toast that disappears after a short delay.
- */
-function showCompletionToast() {
-  const toast = document.createElement("div");
-  toast.setAttribute("role", "status");
-  toast.setAttribute("aria-live", "polite");
-  toast.style.cssText = `
-    position:fixed;bottom:1rem;right:1rem;
-    background:#333;color:#fff;padding:.75rem 1rem;
-    border-radius:.4rem;box-shadow:0 2px 6px rgba(0,0,0,.3);
-    font-size:.9rem;z-index:1000;
-  `;
-  const now = new Date();
-  toast.textContent = `Jeu terminé ! ${now.toLocaleTimeString()}`;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 4000);
-}
-
-/**
- * Persists the current score and unlocks relevant badges.
- */
-async function finalizeGame() {
-  // Persist score
-  try {
-    await saveScore({ score, durationSec: secondsElapsed, date: Date.now() });
-  } catch (e) {
-    utils.showNetworkError("Impossible d’enregistrer le score.");
+function resetGame() {
+  // Réinitialiser l’état
+  gameState.startTime = null;
+  gameState.score = 0;
+  gameState.gameCompleted = false;
+  if (gameState.targetTimeout) {
+    clearTimeout(gameState.targetTimeout);
+    gameState.targetTimeout = null;
+  }
+  if (gameState.gameLoopId) {
+    cancelAnimationFrame(gameState.gameLoopId);
+    gameState.gameLoopId = null;
   }
 
-  // Unlock badges based on the final context
-  const ctx = {
-    gameCompleted: true,
-    durationSec: secondsElapsed,
-    score,
-    sharesCount: 0, // updated elsewhere when a meme is shared
-  };
-  // Badges module decides internally which badge IDs match the condition.
-  // We simply call unlockBadge for each possible badge; the module will ignore
-  // those whose condition is not satisfied.
-  const possibleIds = ["first_game", "speed_demon", "score_100", "perfect_run"];
-  possibleIds.forEach((id) => unlockBadge(id, ctx));
-}
+  // Masquer l’écran d’accueil et afficher l’écran du jeu
+  homeEl.classList.add('hidden');
+  gameEl.classList.remove('hidden');
 
-/* -------------------------------------------------------------------------- */
-/* 5. Core game flow                                                         */
-/* -------------------------------------------------------------------------- */
+  // Réinitialiser le prompt avec des instructions
+  gamePromptEl.textContent = 'Attrapez la cible ! Cliquez dessus avant qu’elle ne disparaisse.';
 
-/**
- * Starts a new game session.
- */
-function startGame() {
-  if (!canvas || !ctx) {
-    utils.showNetworkError("Canvas non disponible.");
-    return;
-  }
-
-  // Reset state
-  secondsElapsed = 0;
-  score = 0;
-  gameActive = true;
-  generateTarget();
-
-  // UI
-  gamePrompt.style.display = "none";
-  gameContainer.style.display = "block";
-
-  // Timer (1 s granularity)
-  timerId = setInterval(() => {
-    secondsElapsed++;
-    if (secondsElapsed >= GAME_DURATION_SEC) endGame();
-  }, 1000);
-
-  // Animation loop
-  function loop() {
-    if (!gameActive) return;
-    drawFrame();
-    animationFrameId = requestAnimationFrame(loop);
-  }
-  loop();
-}
-
-/**
- * Ends the current game, shows toast, unlocks badges and persists data.
- */
-function endGame() {
-  if (!gameActive) return;
-  gameActive = false;
-
-  // Stop timers
-  clearInterval(timerId);
-  cancelAnimationFrame(animationFrameId);
-
-  // UI feedback
-  showCompletionToast();
-
-  // Persist & badge handling
-  finalizeGame();
-
-  // Reset UI after a short pause so the user can see the final frame
-  setTimeout(() => {
-    gameContainer.style.display = "none";
-    gamePrompt.style.display = "block";
-  }, 2000);
-}
-
-/**
- * Handles clicks on the canvas – awards points if the target is hit.
- */
-function handleCanvasClick(event) {
-  if (!gameActive) return;
-  const rect = canvas.getBoundingClientRect();
-  const clickX = event.clientX - rect.left;
-  const clickY = event.clientY - rect.top;
-  const dx = clickX - lastTarget.x;
-  const dy = clickY - lastTarget.y;
-  if (dx * dx + dy * dy <= TARGET_RADIUS * TARGET_RADIUS) {
-    // Hit – increase score and move target
-    score += randomInt(SCORE_INCREMENT_MIN, SCORE_INCREMENT_MAX);
-    generateTarget();
-  }
-}
-
-/**
- * Restarts the game after a finished session.
- */
-function restartGame() {
-  if (gameActive) endGame(); // safety net
+  // Démarrer le jeu
   startGame();
 }
 
 /* -------------------------------------------------------------------------- */
-/* 6. Initialization (public)                                                */
+/*  Démarre la boucle principale du jeu et le spawn aléatoire de la cible.      */
 /* -------------------------------------------------------------------------- */
-
-/**
- * Attaches event listeners and prepares the mini‑game.
- * Should be called once from the main app entry point.
- */
-function initGame() {
-  if (!startBtn || !restartBtn || !canvas) {
-    utils.showNetworkError("Éléments du jeu manquants dans le DOM.");
-    return;
+function startGame() {
+  // Si une partie est déjà en cours, la réinitialiser d’abord
+  if (gameState.startTime) {
+    resetGame();
   }
 
-  startBtn.addEventListener("click", startGame);
-  restartBtn.addEventListener("click", restartGame);
-  canvas.addEventListener("click", handleCanvasClick);
+  gameState.startTime = Date.now();
+  gameState.gameCompleted = false;
 
-  // Ensure the canvas has a sensible size on mobile‑first layout
-  function resizeCanvas() {
-    const parent = canvas.parentElement;
-    const size = Math.min(parent.clientWidth, window.innerHeight * 0.5);
-    canvas.width = size;
-    canvas.height = size;
-  }
-  window.addEventListener("resize", resizeCanvas);
-  resizeCanvas();
+  // Afficher le bouton de redémarrage (caché par défaut)
+  restartGameBtnEl.classList.add('hidden');
+
+  // Démarrer la boucle de jeu
+  gameLoop();
+
+  // Planifier le premier spawn de cible
+  scheduleTargetSpawn();
 }
 
 /* -------------------------------------------------------------------------- */
-/* 7. Exported API                                                            */
+/*  Boucle principale de jeu – met à jour le minuteur, le score et vérifie la fin. */
 /* -------------------------------------------------------------------------- */
-export {
-  initGame,
-  startGame,
-  endGame,
-  restartGame,
-  /** Returns the current score (read‑only). */
-  () => score as getScore,
-  /** Returns true while a game is running. */
-  () => gameActive as isGameActive,
-};
+function gameLoop() {
+  if (!gameState.startTime || gameState.gameCompleted) {
+    return;
+  }
+
+  const elapsed = Date.now() - gameState.startTime;
+  const remaining = GAME_DURATION_MS - elapsed;
+
+  // Mettre à jour le texte du prompt avec le temps restant et le score
+  const remainingSec = Math.ceil(remaining / 1000);
+  gamePromptEl.textContent = `Temps restant : ${remainingSec}s | Score : ${gameState.score}`;
+
+  if (remaining <= 0) {
+    // Temps écoulé – terminer le jeu
+    endGame();
+    return;
+  }
+
+  // Planifier la prochaine frame
+  gameState.gameLoopId = requestAnimationFrame(gameLoop);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Planifie l’apparition d’une cible à un moment aléatoire.                   */
+/* -------------------------------------------------------------------------- */
+function scheduleTargetSpawn() {
+  if (gameState.gameCompleted) {
+    return;
+  }
+
+  const delay = Math.random() * (MAX_SPAWN_DELAY_MS - MIN_SPAWN_DELAY_MS) + MIN_SPAWN_DELAY_MS;
+  gameState.targetTimeout = setTimeout(() => {
+    spawnTarget();
+    // Planifier le prochain spawn après la cible actuelle
+    scheduleTargetSpawn();
+  }, delay);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Crée une cible cliquable à une position aléatoire dans la zone de jeu.     */
+/* -------------------------------------------------------------------------- */
+function spawnTarget() {
+  if (gameState.gameCompleted) {
+    return;
+  }
+
+  const rect = gameAreaEl.getBoundingClientRect();
+  const x = Math.floor(Math.random() * (rect.width - 50));
+  const y = Math.floor(Math.random() * (rect.height - 50));
+
+  const target = document.createElement('div');
+  target.className = 'target';
+  target.style.position = 'absolute';
+  target.style.left = `${x}px`;
+  target.style.top = `${y}px`;
+  target.style.width = '50px';
+  target.style.height = '50px';
+  target.style.backgroundColor = '#ff4d4d';
+  target.style.borderRadius = '50%';
+  target.style.cursor = 'pointer';
+  target.style.display = 'block';
+  target.setAttribute('role', 'button');
+  target.setAttribute('aria-label', 'Cible');
+
+  gameAreaEl.appendChild(target);
+
+  // Masquer la cible après un court instant
+  gameState.targetTimeout = setTimeout(() => {
+    target.style.display = 'none';
+  }, TARGET_SHOW_MS);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Gère les clics sur la zone de jeu – incrémente le score si la cible est cliquée. */
+/* -------------------------------------------------------------------------- */
+function handleTargetClick(event) {
+  if (gameState.gameCompleted) {
+    return;
+  }
+
+  const target = event.target.closest('.target');
+  if (!target) {
+    return;
+  }
+
+  // Incrémenter le score
+  gameState.score += POINTS_PER_HIT;
+
+  // Masquer la cible immédiatement
+  target.style.display = 'none';
+  if (gameState.targetTimeout) {
+    clearTimeout(gameState.targetTimeout);
+    gameState.targetTimeout = null;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Termine le jeu : stocke le score, vérifie les badges, affiche le toast de fin   */
+/*  et montre le bouton de redémarrage.                                         */
+/* -------------------------------------------------------------------------- */
+async function endGame() {
+  if (gameState.gameCompleted) {
+    return;
+  }
+
+  gameState.gameCompleted = true;
+
+  // Annuler tout spawn de cible en attente
+  if (gameState.targetTimeout) {
+    clearTimeout(gameState.targetTimeout);
+    gameState.targetTimeout = null;
+  }
+  if (gameState.gameLoopId) {
+    cancelAnimationFrame(gameState.gameLoopId);
+    gameState.gameLoopId = null;
+  }
+
+  // Stocker le score final
+  try {
+    await setScore(gameState.score);
+  } catch (err) {
+    console.error('Erreur lors du stockage du score :', err);
+    showNetworkError('Impossible de sauvegarder le score.');
+  }
+
+  const durationSec = Math.floor((Date.now() - gameState.startTime) / 1000);
+  const context = {
+    gameCompleted: true,
+    durationSec,
+    score: gameState.score,
+  };
+
+  // Vérifier chaque badge du catalogue
+  try {
+    const unlockedIds = await getUnlockedBadgeIds();
+
+    for (const badge of BADGES_CATALOG) {
+      if (!badge.condition) {
+        continue;
+      }
+      if (unlockedIds.includes(badge.id)) {
+        continue;
+      }
+      if (badge.condition(context)) {
+        // Déverrouiller le badge
+        await setBadgeUnlocked(badge.id, context);
+        // Afficher le badge dans le panneau des badges
+        renderBadge(badge);
+      }
+    }
+  } catch (err) {
+    console.error('Erreur lors de la vérification des badges :', err);
+    showNetworkError('Impossible de charger les badges.');
+  }
+
+  // Afficher le toast de fin de jeu avec horodatage
+  showCompletionToast();
+
+  // Afficher le bouton de redémarrage
+  restartGameBtnEl.classList.remove('hidden');
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Affiche un badge nouvellement déverrouillé dans la liste des badges.         */
+/* -------------------------------------------------------------------------- */
+function renderBadge(badge) {
+  const li = document.createElement('li');
+  li.innerHTML = `
+    <span role="img" aria-label="${badge.name}" aria-hidden="true">${badge.icon}</span>
+    <div>
+      <strong>${badge.name}</strong>
+      <p>${badge.description}</p>
+    </div>
+  `;
+  badgesListEl.appendChild(li);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Affiche un toast de notification avec l’horodatage de fin de jeu.          */
+/* -------------------------------------------------------------------------- */
+function showCompletionToast() {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.setAttribute('role', 'alert');
+  toast.setAttribute('aria-live', 'assertive');
+  toast.textContent = `Jeu terminé ! Score : ${gameState.score}, Horodatage : ${new Date().toLocaleString()}`;
+  document.body.appendChild(toast);
+  // Supprimer le toast après 3 secondes
+  setTimeout(() => toast.remove(), 3000);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Initialisation – lie les événements une fois le DOM prêt.                  */
+/* -------------------------------------------------------------------------- */
+document.addEventListener('DOMContentLoaded', () => {
+  startGameBtnEl.addEventListener('click', startGame);
+  restartGameBtnEl.addEventListener('click', resetGame);
+  gameAreaEl.addEventListener('click', handleTargetClick);
+});
+
+/* -------------------------------------------------------------------------- */
+/*  Exports – rendent les fonctions accessibles aux autres modules si nécessaire. */
+/* -------------------------------------------------------------------------- */
+export { startGame, resetGame, handleTargetClick, endGame };
