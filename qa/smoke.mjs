@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import path from 'path';
 const E = [], err = m => { E.push(m); console.log('::error::' + m); };
 const walk = d => readdirSync(d).flatMap(f => f === 'node_modules' || f[0] === '.' ? [] : statSync(d + '/' + f).isDirectory() ? walk(d + '/' + f) : [d + '/' + f]);
-for (const f of walk('.').filter(f => f.endsWith('.js'))) try { execSync('node --check ' + f, { stdio: 'pipe' }); } catch (e) { err(f.slice(2) + ': erreur de syntaxe ' + String(e.stderr).split('\n').find(l => /Error/.test(l))); }
+for (const f of walk('.').filter(f => f.endsWith('.js'))) try { execSync('node --check ' + f, { stdio: 'pipe' }); } catch (e) { const L = String(e.stderr).split('\n'), n = (L[0].match(/:(\d+)$/) || [])[1]; err(f.slice(2) + ': erreur de syntaxe' + (n ? ' ligne ' + n : '') + ' : ' + (L.find(l => /Error/.test(l)) || '') + ' — « ' + (L[1] || '').trim().slice(0, 110) + ' »'); }
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml' };
 const srv = createServer((q, s) => { const u = q.url.split('?')[0], p = '.' + (u === '/' ? '/index.html' : u); if (!existsSync(p)) { s.statusCode = 404; return s.end(); } s.setHeader('content-type', mime[path.extname(p)] || 'application/octet-stream'); s.end(readFileSync(p)); }).listen(8123);
 const b = await chromium.launch(), pg = await b.newPage({ viewport: { width: 390, height: 800 } });
