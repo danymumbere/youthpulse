@@ -41,19 +41,11 @@ function buildShareUrl(platform, content) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Native Share API wrapper                                                  */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Attempt to use the native Web Share API. If unavailable, fall back to the
- * platform‑specific helpers.
- * @param {object} options - { title, text, url }
- */
 export function shareViaWebShare({ title, text, url }) {
   try {
     if (navigator.share) {
       navigator.share({ title, text, url })
-        probably .catch((err) => {
+        .catch((err) => {
           console.warn('Web Share API share cancelled or failed:', err);
         });
       return;
@@ -65,7 +57,6 @@ export function shareViaWebShare({ title, text, url }) {
     showNetworkError('Impossible d’ouvrir le partage.');
   }
 }
-
 /* -------------------------------------------------------------------------- */
 /*  Platform‑specific share helpers                                           */
 /* -------------------------------------------------------------------------- */
