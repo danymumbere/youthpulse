@@ -299,16 +299,16 @@ restartBtn.addEventListener("click", async () => {
           gameCompleted: true,
           score,
           durationSec
-        });
-        updateLeaderboardUI();
-      } catch (e) {
-        console.error("Erreur pendant le redémarrage du jeu :", e);
-      }
+try {
+            updateLeaderboardUI();
+        } catch (e) {
+            console.error("Erreur pendant le redémarrage du jeu :", e);
+        }
     });
 
     document.addEventListener("DOMContentLoaded", () => {
-      loadInitialContent();
-      initMemeGenerator();
-      initVideoFeed();
-      initEventHandlers();
+        loadInitialContent();
+        initMemeGenerator();
+        initVideoFeed();
+        initEventHandlers();
     });
