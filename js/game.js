@@ -1,305 +1,211 @@
-// js/game.js
 "use strict";
 
 /* -------------------------------------------------------------------------- */
-/*  YouthPulse – Mini‑Game Module                                            */
-/*  ES‑module, vanilla JS. Fournit la logique du jeu instantané de 2 à 3 minutes, */
-/*  le calcul du score, le déverrouillage des badges et l’interface utilisateur       */
-/*  réactive et accessible. Toutes les données sont stockées localement via       */
-/*  IndexedDB (db.js). Le jeu s’arrête automatiquement après 3 minutes et affiche   */
-/*  un toast de fin avec un horodatage.                                        */
+/*  YouthPulse – Mini-Game Module                                            */
+/*  ES module, vanilla JS. Handles game logic, scoring, badge unlocking.      */
 /* -------------------------------------------------------------------------- */
 
-import { setScore, getScore, setBadgeUnlocked, getUnlockedBadgeIds } from './db.js';
-import { BADGES_CATALOG } from './badges.js';
-import { showNetworkError } from './utils.js';
+import { BADGES_CATALOG } from "./badges.js";
+import { setScore, getScore } from "./db.js";
+import { showToast } from "./utils.js";
 
-/* -------------------------------------------------------------------------- */
-/*  Constantes du jeu – ajustez la durée, les points, les délais si nécessaire.   */
-/* -------------------------------------------------------------------------- */
-const GAME_DURATION_MS = 3 * 60 * 1000; // 3 minutes
-const POINTS_PER_HIT = 10;
-const TARGET_SHOW_MS = 1500;
-const MIN_SPAWN_DELAY_MS = 1000;
-const MAX_SPAWN_DELAY_MS = 3000;
+let gameStartTime = null;
+let gameInterval = null;
+let currentScore = 0;
+let currentQuestionIndex = 0;
 
-/* -------------------------------------------------------------------------- */
-/*  Référence au DOM – IDs autorisés par le projet.                           */
-/* -------------------------------------------------------------------------- */
-const homeEl = document.getElementById('home');
-const startGameBtnEl = document.getElementById('startGameBtn');
-const gameEl = document.getElementById('game');
-const gamePromptEl = document.getElementById('gamePrompt');
-const gameAreaEl = document.getElementById('gameArea');
-const restartGameBtnEl = document.getElementById('restartGameBtn');
-const badgesListEl = document.getElementById('badgesList');
-
-/* -------------------------------------------------------------------------- */
-/*  État du jeu – persistant pendant une session.                              */
-/* -------------------------------------------------------------------------- */
-const gameState = {
-  startTime: null,          // timestamp du début (ms)
-  score: 0,                 // score actuel
-  gameCompleted: false,     // true lorsque le temps est écoulé
-  targetTimeout: null,      // handle pour masquer la cible
-  gameLoopId: null,         // requestAnimationFrame id
-};
-
-/* -------------------------------------------------------------------------- */
-/*  Initialise une nouvelle partie – réinitialise l’état, affiche l’écran du jeu   */
-/*  et démarre la boucle principale.                                            */
-/* -------------------------------------------------------------------------- */
-function resetGame() {
-  // Réinitialiser l’état
-  gameState.startTime = null;
-  gameState.score = 0;
-  gameState.gameCompleted = false;
-  if (gameState.targetTimeout) {
-    clearTimeout(gameState.targetTimeout);
-    gameState.targetTimeout = null;
+// Questions inspirées de la réalité de Kinshasa et du codage
+const QUIZ_QUESTIONS = [
+  {
+    prompt: "Quel langage utilise-t-on principalement pour structurer des pages Web statiques en HTML ?",
+    options: ["CSS", "HTML", "Python", "SQL"],
+    correct: 1
+  },
+  {
+    prompt: "À Kinshasa, quel secteur technologique connaît la croissance la plus rapide chez les jeunes ?",
+    options: ["Le développement mobile", "L'agriculture industrielle", "L'horlogerie", "La construction navale"],
+    correct: 0
+  },
+  {
+    prompt: "Que signifie l'acronyme API en programmation ?",
+    options: [
+      "Application Programming Interface",
+      "Advanced Program Integration",
+      "Automated Protocol Interaction",
+      "Application Process Index"
+    ],
+    correct: 0
+  },
+  {
+    prompt: "Quel outil de stockage local est utilisé dans cette application pour fonctionner hors ligne ?",
+    options: ["IndexedDB", "Cloud distant", "Disquette", "Serveur FTP"],
+    correct: 0
+  },
+  {
+    prompt: "Quel est l'objectif principal de l'application YouthPulse ?",
+    options: [
+      "Partager des mini-jeux, témoignages et mèmes locaux",
+      "Vendre des smartphones",
+      "Diffuser des films internationaux",
+      "Jouer à des jeux de casino"
+    ],
+    correct: 0
   }
-  if (gameState.gameLoopId) {
-    cancelAnimationFrame(gameState.gameLoopId);
-    gameState.gameLoopId = null;
+];
+
+export function initializeGame() {
+  const launchBtn = document.getElementById("launchGameBtn");
+  const restartBtn = document.getElementById("restartGameBtn");
+
+  if (launchBtn) {
+    launchBtn.addEventListener("click", () => {
+      startGame();
+    });
   }
 
-  // Masquer l’écran d’accueil et afficher l’écran du jeu
-  homeEl.classList.add('hidden');
-  gameEl.classList.remove('hidden');
-
-  // Réinitialiser le prompt avec des instructions
-  gamePromptEl.textContent = 'Attrapez la cible ! Cliquez dessus avant qu’elle ne disparaisse.';
-
-  // Démarrer le jeu
-  startGame();
+  if (restartBtn) {
+    restartBtn.addEventListener("click", () => {
+      startGame();
+    });
+  }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Démarre la boucle principale du jeu et le spawn aléatoire de la cible.      */
-/* -------------------------------------------------------------------------- */
-function startGame() {
-  // Si une partie est déjà en cours, la réinitialiser d’abord
-  if (gameState.startTime) {
-    resetGame();
+export function startGame() {
+  gameStartTime = Date.now();
+  currentScore = 0;
+  currentQuestionIndex = 0;
+
+  const gameArea = document.getElementById("gameArea");
+  const gamePrompt = document.getElementById("gamePrompt");
+  const gameTitle = document.getElementById("gameTitle");
+  const toast = document.getElementById("gameToast");
+
+  if (toast) {
+    toast.textContent = "";
+    toast.style.display = "none";
   }
 
-  gameState.startTime = Date.now();
-  gameState.gameCompleted = false;
+  if (gameTitle) {
+    gameTitle.textContent = "Défi Jeunesse Kinshasa – En cours";
+  }
 
-  // Afficher le bouton de redémarrage (caché par défaut)
-  restartGameBtnEl.classList.add('hidden');
-
-  // Démarrer la boucle de jeu
-  gameLoop();
-
-  // Planifier le premier spawn de cible
-  scheduleTargetSpawn();
+  renderQuestion();
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Boucle principale de jeu – met à jour le minuteur, le score et vérifie la fin. */
-/* -------------------------------------------------------------------------- */
-function gameLoop() {
-  if (!gameState.startTime || gameState.gameCompleted) {
-    return;
-  }
+function renderQuestion() {
+  const gameArea = document.getElementById("gameArea");
+  const gamePrompt = document.getElementById("gamePrompt");
 
-  const elapsed = Date.now() - gameState.startTime;
-  const remaining = GAME_DURATION_MS - elapsed;
+  if (!gameArea || !gamePrompt) return;
 
-  // Mettre à jour le texte du prompt avec le temps restant et le score
-  const remainingSec = Math.ceil(remaining / 1000);
-  gamePromptEl.textContent = `Temps restant : ${remainingSec}s | Score : ${gameState.score}`;
-
-  if (remaining <= 0) {
-    // Temps écoulé – terminer le jeu
+  if (currentQuestionIndex >= QUIZ_QUESTIONS.length) {
     endGame();
     return;
   }
 
-  // Planifier la prochaine frame
-  gameState.gameLoopId = requestAnimationFrame(gameLoop);
+  const q = QUIZ_QUESTIONS[currentQuestionIndex];
+  gamePrompt.textContent = `Question ${currentQuestionIndex + 1} sur ${QUIZ_QUESTIONS.length} : ${q.prompt}`;
+
+  gameArea.innerHTML = "";
+  q.options.forEach((opt, idx) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "game-option-btn";
+    btn.textContent = opt;
+    btn.style.margin = "8px 0";
+    btn.style.padding = "12px";
+    btn.style.width = "100%";
+    btn.style.border = "1px solid var(--border-color, #ccc)";
+    btn.style.borderRadius = "8px";
+    btn.style.background = "var(--bg-card, #fff)";
+    btn.style.cursor = "pointer";
+    btn.style.textAlign = "left";
+
+    btn.addEventListener("click", () => {
+      handleAnswer(idx === q.correct);
+    });
+
+    gameArea.appendChild(btn);
+  });
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Planifie l’apparition d’une cible à un moment aléatoire.                   */
-/* -------------------------------------------------------------------------- */
-function scheduleTargetSpawn() {
-  if (gameState.gameCompleted) {
-    return;
+function handleAnswer(isCorrect) {
+  if (isCorrect) {
+    currentScore += 20;
+    showToast("Bonne réponse ! +20 points.");
+  } else {
+    showToast("Mauvaise réponse ! Continue.");
   }
 
-  const delay = Math.random() * (MAX_SPAWN_DELAY_MS - MIN_SPAWN_DELAY_MS) + MIN_SPAWN_DELAY_MS;
-  gameState.targetTimeout = setTimeout(() => {
-    spawnTarget();
-    // Planifier le prochain spawn après la cible actuelle
-    scheduleTargetSpawn();
-  }, delay);
+  currentQuestionIndex++;
+  renderQuestion();
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Crée une cible cliquable à une position aléatoire dans la zone de jeu.     */
-/* -------------------------------------------------------------------------- */
-function spawnTarget() {
-  if (gameState.gameCompleted) {
-    return;
+function endGame() {
+  const durationSec = Math.round((Date.now() - gameStartTime) / 1000);
+  const gameArea = document.getElementById("gameArea");
+  const gamePrompt = document.getElementById("gamePrompt");
+  const gameTitle = document.getElementById("gameTitle");
+  const toast = document.getElementById("gameToast");
+
+  if (gameTitle) {
+    gameTitle.textContent = "Défi Jeunesse Kinshasa – Terminé";
   }
 
-  const rect = gameAreaEl.getBoundingClientRect();
-  const x = Math.floor(Math.random() * (rect.width - 50));
-  const y = Math.floor(Math.random() * (rect.height - 50));
-
-  const target = document.createElement('div');
-  target.className = 'target';
-  target.style.position = 'absolute';
-  target.style.left = `${x}px`;
-  target.style.top = `${y}px`;
-  target.style.width = '50px';
-  target.style.height = '50px';
-  target.style.backgroundColor = '#ff4d4d';
-  target.style.borderRadius = '50%';
-  target.style.cursor = 'pointer';
-  target.style.display = 'block';
-  target.setAttribute('role', 'button');
-  target.setAttribute('aria-label', 'Cible');
-
-  gameAreaEl.appendChild(target);
-
-  // Masquer la cible après un court instant
-  gameState.targetTimeout = setTimeout(() => {
-    target.style.display = 'none';
-  }, TARGET_SHOW_MS);
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Gère les clics sur la zone de jeu – incrémente le score si la cible est cliquée. */
-/* -------------------------------------------------------------------------- */
-function handleTargetClick(event) {
-  if (gameState.gameCompleted) {
-    return;
+  if (gamePrompt) {
+    gamePrompt.textContent = `Bravo ! Vous avez terminé le mini-jeu en ${durationSec} secondes avec un score de ${currentScore} points.`;
   }
 
-  const target = event.target.closest('.target');
-  if (!target) {
-    return;
+  if (gameArea) {
+    gameArea.innerHTML = "";
   }
 
-  // Incrémenter le score
-  gameState.score += POINTS_PER_HIT;
-
-  // Masquer la cible immédiatement
-  target.style.display = 'none';
-  if (gameState.targetTimeout) {
-    clearTimeout(gameState.targetTimeout);
-    gameState.targetTimeout = null;
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Termine le jeu : stocke le score, vérifie les badges, affiche le toast de fin   */
-/*  et montre le bouton de redémarrage.                                         */
-/* -------------------------------------------------------------------------- */
-async function endGame() {
-  if (gameState.gameCompleted) {
-    return;
+  if (toast) {
+    const timestamp = new Date().toLocaleTimeString();
+    toast.textContent = `Jeu complété à ${timestamp} (${durationSec}s). Score : ${currentScore}`;
+    toast.style.display = "block";
   }
 
-  gameState.gameCompleted = true;
-
-  // Annuler tout spawn de cible en attente
-  if (gameState.targetTimeout) {
-    clearTimeout(gameState.targetTimeout);
-    gameState.targetTimeout = null;
-  }
-  if (gameState.gameLoopId) {
-    cancelAnimationFrame(gameState.gameLoopId);
-    gameState.gameLoopId = null;
-  }
-
-  // Stocker le score final
-  try {
-    await setScore(gameState.score);
-  } catch (err) {
-    console.error('Erreur lors du stockage du score :', err);
-    showNetworkError('Impossible de sauvegarder le score.');
-  }
-
-  const durationSec = Math.floor((Date.now() - gameState.startTime) / 1000);
   const context = {
     gameCompleted: true,
-    durationSec,
-    score: gameState.score,
+    durationSec: durationSec,
+    score: currentScore
   };
 
-  // Vérifier chaque badge du catalogue
-  try {
-    const unlockedIds = await getUnlockedBadgeIds();
+  processBadges(context);
+  updateScore(currentScore);
+}
 
-    for (const badge of BADGES_CATALOG) {
-      if (!badge.condition) {
-        continue;
+function processBadges(context) {
+  BADGES_CATALOG.forEach((badge) => {
+    try {
+      if (badge.condition && badge.condition(context)) {
+        unlockBadge(badge.id);
       }
-      if (unlockedIds.includes(badge.id)) {
-        continue;
-      }
-      if (badge.condition(context)) {
-        // Déverrouiller le badge
-        await setBadgeUnlocked(badge.id, context);
-        // Afficher le badge dans le panneau des badges
-        renderBadge(badge);
-      }
+    } catch (err) {
+      console.error(`Erreur lors de l'évaluation du badge ${badge.id}:`, err);
     }
-  } catch (err) {
-    console.error('Erreur lors de la vérification des badges :', err);
-    showNetworkError('Impossible de charger les badges.');
+  });
+}
+
+async function unlockBadge(badgeId) {
+  try {
+    const badgeKey = `badge_${badgeId}`;
+    if (localStorage.getItem(badgeKey) !== "true") {
+      localStorage.setItem(badgeKey, "true");
+      showToast(`Badge débloqué : ${badgeId} !`);
+    }
+  } catch (e) {
+    console.error("Échec du déblocage du badge :", e);
   }
-
-  // Afficher le toast de fin de jeu avec horodatage
-  showCompletionToast();
-
-  // Afficher le bouton de redémarrage
-  restartGameBtnEl.classList.remove('hidden');
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Affiche un badge nouvellement déverrouillé dans la liste des badges.         */
-/* -------------------------------------------------------------------------- */
-function renderBadge(badge) {
-  const li = document.createElement('li');
-  li.innerHTML = `
-    <span role="img" aria-label="${badge.name}" aria-hidden="true">${badge.icon}</span>
-    <div>
-      <strong>${badge.name}</strong>
-      <p>${badge.description}</p>
-    </div>
-  `;
-  badgesListEl.appendChild(li);
+async function updateScore(pointsToAdd) {
+  try {
+    const currentStoredScore = await getScore();
+    const newTotal = (currentStoredScore || 0) + pointsToAdd;
+    await setScore(newTotal);
+  } catch (err) {
+    console.error("Erreur lors de la mise à jour du score :", err);
+  }
 }
-
-/* -------------------------------------------------------------------------- */
-/*  Affiche un toast de notification avec l’horodatage de fin de jeu.          */
-/* -------------------------------------------------------------------------- */
-function showCompletionToast() {
-  const toast = document.createElement('div');
-  toast.className = 'toast';
-  toast.setAttribute('role', 'alert');
-  toast.setAttribute('aria-live', 'assertive');
-  toast.textContent = `Jeu terminé ! Score : ${gameState.score}, Horodatage : ${new Date().toLocaleString()}`;
-  document.body.appendChild(toast);
-  // Supprimer le toast après 3 secondes
-  setTimeout(() => toast.remove(), 3000);
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Initialisation – lie les événements une fois le DOM prêt.                  */
-/* -------------------------------------------------------------------------- */
-document.addEventListener('DOMContentLoaded', () => {
-  startGameBtnEl.addEventListener('click', startGame);
-  restartGameBtnEl.addEventListener('click', resetGame);
-  gameAreaEl.addEventListener('click', handleTargetClick);
-});
-
-/* -------------------------------------------------------------------------- */
-/*  Exports – rendent les fonctions accessibles aux autres modules si nécessaire. */
-/* -------------------------------------------------------------------------- */
-export { startGame, resetGame, handleTargetClick, endGame };

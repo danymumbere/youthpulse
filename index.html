@@ -1,67 +1,107 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YouthPulse – Faith‑Powered Mini‑Games &amp; Badges</title><meta name="description" content="YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps."><meta name="keywords" content="YouthPulse, faith games, badges, memes, Kinshasa, static web, mobile, offline, sharing, gamification"><link rel="canonical" href="https://danymumbere.github.io/youthpulse/"><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0a7d6c"><meta property="og:type" content="website"><meta property="og:site_name" content="The Lamp's Mark"><meta property="og:title" content="YouthPulse – Faith‑Powered Mini‑Games &amp; Badges"><meta property="og:description" content="YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps."><meta property="og:url" content="https://danymumbere.github.io/youthpulse/"><meta property="og:image" content="https://danymumbere.github.io/youthpulse/og.svg"><meta property="og:image:alt" content="YouthPulse – Faith‑Powered Mini‑Games &amp; Badges"><meta property="og:locale" content="fr_FR"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="YouthPulse – Faith‑Powered Mini‑Games &amp; Badges"><meta name="twitter:description" content="YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps."><meta name="twitter:image" content="https://danymumbere.github.io/youthpulse/og.svg"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"YouthPulse – Faith‑Powered Mini‑Games & Badges","description":"YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps.","url":"https://danymumbere.github.io/youthpulse/","applicationCategory":"LifestyleApplication","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"creator":{"@type":"Organization","name":"The Lamp's Mark","url":"https://thelampsmark.pages.dev/"}}</script><link rel="stylesheet" href="style.css"></head><body><main>
-  <section data-feature="instant-snapshot-mini-games" id="home">
-    <h2>YouthPulse – Accueil</h2>
-    <p>Bienvenue sur YouthPulse. Lancez un mini-jeu de 2 à 3 minutes pour tester votre rapidité de réaction et découvrir un toast de fin de partie avec horodatage.</p>
-    <button id="startGameBtn" aria-label="Démarrer le mini-jeu">Commencer le jeu</button>
+  <!-- Accueil – Mobile‑first, navigation principale -->
+  <section id="home" data-feature="home" aria-labelledby="homeTitle">
+    <h1 id="homeTitle">YouthPulse – Découvre, crée, partage</h1>
+    <p>Explore des jeux narratifs courts, regarde les témoignages de jeunes de Kinshasa, crée des memes et gagne des badges ! Tout fonctionne hors‑ligne.</p>
+    <button type="button" id="launchGameBtn" aria-controls="game" aria-label="Lancer une partie instantanée">Jouer : Instant‑Snapshot</button>
+    <nav aria-label="Navigation principale">
+      <ul class="nav-list">
+        <li><a href="#badges" aria-label="Voir mes badges">Mes badges</a></li>
+        <li><a href="#leaderboard" aria-label="Voir le classement">Classement</a></li>
+        <li><a href="#videos" aria-label="Regarder les témoignages vidéo">Témoignages</a></li>
+        <li><a href="#memes" aria-label="Créer un meme">Créer un meme</a></li>
+        <li><a href="#share" aria-label="Partager sur les réseaux">Partager</a></li>
+        <li><a href="#settings" aria-label="Paramètres et exportation">Paramètres</a></li>
+      </ul>
+    </nav>
   </section>
 
-  <section data-feature="instant-snapshot-mini-games" id="game" hidden>
-    <h2>Mini‑Jeu – Snapshot</h2>
-    <p id="gamePrompt" role="status" aria-live="polite">Le jeu commencera sous peu…</p>
-    <div id="gameArea" aria-label="Zone de jeu"></div>
-    <button id="restartGameBtn" hidden aria-label="Recommencer le jeu">Recommencer</button>
+  <!-- Jeu instantané – 2 à 3 minutes -->
+  <section id="game" data-feature="instant-snapshot-mini-games" aria-labelledby="gameTitle" hidden>
+    <h2 id="gameTitle">Jeu : Instant‑Snapshot</h2>
+    <div id="gamePrompt" class="game-prompt" aria-live="polite"></div>
+    <div id="gameArea" class="game-area" role="region" aria-label="Zone de jeu"></div>
+    <button type="button" id="restartGameBtn" aria-label="Recommencer le jeu">Recommencer</button>
+    <div id="gameToast" class="toast" role="status" aria-live="assertive" hidden></div>
   </section>
 
-  <section data-feature="badge-system-and-local-leaderboard" id="badges">
-    <h2>Badges</h2>
-    <div id="badgesList" role="list" aria-label="Liste des badges"></div>
+  <!-- Badges – Système de récompenses -->
+  <section id="badges" data-feature="badge-system-and-local-leaderboard" aria-labelledby="badgesTitle">
+    <h2 id="badgesTitle">Mes badges</h2>
+    <p>Chaque badge reflète une action accomplie : jouer, créer, partager ou visionner un témoignage.</p>
+    <div id="badgesContainer" class="badge-grid" aria-live="polite"></div>
   </section>
 
-  <section data-feature="badge-system-and-local-leaderboard" id="leaderboard">
-    <h2>Classement local</h2>
-    <ol id="leaderboardList" aria-label="Classement des scores"></ol>
+  <!-- Classement – Score local -->
+  <section id="leaderboard" aria-labelledby="leaderboardTitle">
+    <h2 id="leaderboardTitle">Classement local</h2>
+    <p>Les scores sont enregistrés dans votre navigateur et triés du plus élevé au plus bas.</p>
+    <table id="leaderboardTable" class="leaderboard-table" aria-describedby="leaderboardDesc">
+      <caption id="leaderboardDesc">Classement des utilisateurs locaux</caption>
+      <thead>
+        <tr>
+          <th scope="col">Rang</th>
+          <th scope="col">Nom d’utilisateur</th>
+          <th scope="col">Score</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </section>
 
-  <section data-feature="local-identity-video-feed" id="videos">
-    <h2>Témoignages de jeunes de Kinshasa</h2>
-    <div id="videoFeed" role="list" aria-label="Flux vidéo"></div>
+  <!-- Témoignages vidéo – Identité locale -->
+  <section id="videos" data-feature="local-identity-video-feed" aria-labelledby="videosTitle">
+    <h2 id="videosTitle">Témoignages de jeunes de Kinshasa</h2>
+    <ul id="videoList" class="video-list" aria-live="polite"></ul>
   </section>
 
-  <section data-feature="playful-meme-generator-and-share" id="memes">
-    <h2>Générateur de mèmes</h2>
-    <div id="memeEditor" aria-label="Éditeur de mèmes simple"></div>
-    <button id="shareMemeBtn" aria-label="Partager le mème créé">Partager le mème</button>
+  <!-- Générateur de memes – Création et partage -->
+  <section id="memes" data-feature="playful-meme-generator-and-share" aria-labelledby="memesTitle">
+    <h2 id="memesTitle">Créer un meme</h2>
+    <form id="memeForm" novalidate>
+      <label for="memeImageInput">Choisir une image de base</label>
+      <input type="file" id="memeImageInput" accept="image/*" aria-required="true">
+      <label for="topTextInput">Texte du haut</label>
+      <input type="text" id="topTextInput" placeholder="Texte du haut" maxlength="80">
+      <label for="bottomTextInput">Texte du bas</label>
+      <input type="text" id="bottomTextInput" placeholder="Texte du bas" maxlength="80">
+      <button type="button" id="previewMemeBtn">Aperçu du meme</button>
+    </form>
+    <canvas id="memeCanvas" width="300" height="300" aria-label="Aperçu du meme" role="img"></canvas>
+    <button type="button" id="shareMemeBtn" aria-label="Partager le meme">Partager le meme</button>
   </section>
 
-  <section data-feature="social-sharing-via-apps" id="share">
-    <h2>Partager l'application</h2>
-    <p>Utilisez les boutons ci-dessous pour partager ce contenu directement sur vos réseaux sociaux préférés.</p>
-    <div id="shareButtons" role="group" aria-label="Options de partage"></div>
+  <!-- Partage social – Boutons natifs -->
+  <section id="share" data-feature="social-sharing-via-apps" aria-labelledby="shareTitle">
+    <h2 id="shareTitle">Partager votre création</h2>
+    <p>Utilisez les applications natives pour diffuser votre meme ou votre score.</p>
+    <div class="share-buttons">
+      <button type="button" id="whatsappShareBtn" aria-label="Partager sur WhatsApp">WhatsApp</button>
+      <button type="button" id="facebookShareBtn" aria-label="Partager sur Facebook">Facebook</button>
+      <button type="button" id="tiktokShareBtn" aria-label="Partager sur TikTok">TikTok</button>
+    </div>
   </section>
 
-  <section data-feature="simple-offline-fallback" id="offline" hidden>
-    <h2>Hors ligne</h2>
-    <p>Vous êtes actuellement hors ligne. Cette page est disponible en mode hors ligne ; veuillez vérifier votre connexion et réessayer.</p>
-    <a href="/" aria-label="Réessayer">Réessayer</a>
+  <!-- Paramètres – Export / import des données -->
+  <section id="settings" data-feature="local-persistence-for-progress" aria-labelledby="settingsTitle">
+    <h2 id="settingsTitle">Paramètres</h2>
+    <button type="button" id="exportDataBtn" aria-label="Exporter les données locales">Exporter les données (JSON)</button>
+    <input type="file" id="importDataInput" accept="application/json" aria-label="Importer des données locales" hidden>
+    <button type="button" id="importDataBtn" aria-label="Importer les données locales">Importer les données (JSON)</button>
   </section>
 
-  <section data-feature="ultra-light-static-hosting" aria-hidden="true" style="position:absolute;left:-9999px;">
-    <h3>Hébergement ultra‑léger</h3>
-    <p>Toutes les pages sont des fichiers HTML/CSS/JS purs. La taille totale compressée est inférieure à 30 Ko et le chargement s'effectue en moins de 2 secondes sur une connexion 2 Mbps.</p>
+  <!-- Gestion du mode hors‑ligne -->
+  <section id="offline" data-feature="simple-offline-fallback" aria-labelledby="offlineTitle" hidden>
+    <h2 id="offlineTitle">Mode hors‑ligne</h2>
+    <p>Vous êtes hors‑ligne ; le site fonctionne avec les données en cache. Certaines fonctions nécessitant le réseau ne sont pas disponibles.</p>
   </section>
 
-  <section data-feature="local-persistence-for-progress" aria-hidden="true" style="position:absolute;left:-9999px;">
-    <h3>Persistance locale des progrès</h3>
-    <p>Les réalisations, les badges débloqués et les scores sont conservés via IndexedDB, même après des rafraîchissements ou des visites ultérieures.</p>
-  </section>
+  <!-- Fonction ultra‑light static hosting – Indicateur -->
+  <section id="ultraLight" data-feature="ultra-light-static-hosting" hidden aria-hidden="true"></section>
 
-  <section data-feature="mobile-first-responsive-ui" aria-hidden="true" style="position:absolute;left:-9999px;">
-    <h3>Interface utilisateur mobile‑first</h3>
-    <p>Mise en page Flexbox/Grid avec points de rupture adaptés aux mobiles. Les cibles tactiles sont d'au moins 44 px et l'interface reste entièrement opérationnelle sur des largeurs d'écran de 320 px et plus.</p>
-  </section>
+  <!-- Fonction mobile‑first responsive UI – Indicateur -->
+  <section id="mobileUI" data-feature="mobile-first-responsive-ui" hidden aria-hidden="true"></section>
 
-  <section data-feature="real-world-embedded-content" aria-hidden="true" style="position:absolute;left:-9999px;">
-    <h3>Contenu réel intégré</h3>
-    <p>Tous les textes (témoignages, citations scripturaires, légendes de mèmes) sont stockés dans un seul fichier `js/data.js`, éliminant les appels API externes et garantissant une disponibilité hors ligne.</p>
-  </section>
-</main><footer class="tlm"><p>Créé par <a href="https://thelampsmark.pages.dev/" target="_blank" rel="noopener">The Lamp's Mark</a></p><p>Cette application est gratuite. Pour la soutenir : mobile money Africell <strong>0906253050</strong></p><p><a href="https://wa.me/?text=YouthPulse%20%E2%80%93%20Faith%E2%80%91Powered%20Mini%E2%80%91Games%20%26%20Badges%20https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Partager sur WhatsApp</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Facebook</a> · <button type="button" id="tlm-share">Partager</button></p></footer><script>document.getElementById('tlm-share').onclick=()=>navigator.share?navigator.share({title:document.title,url:location.href}):navigator.clipboard.writeText(location.href).then(()=>alert('Lien copié'))</script><script type="module" src="js/app.js"></script></body></html>
+  <!-- Contenu embarqué réel – Indicateur -->
+  <section id="embeddedContent" data-feature="real-world-embedded-content" hidden aria-hidden="true"></section>
+</main><div id="badgesList"></div><div id="leaderboardList"></div><footer class="tlm"><p>Créé par <a href="https://thelampsmark.pages.dev/" target="_blank" rel="noopener">The Lamp's Mark</a></p><p>Cette application est gratuite. Pour la soutenir : mobile money Africell <strong>0906253050</strong></p><p><a href="https://wa.me/?text=YouthPulse%20%E2%80%93%20Faith%E2%80%91Powered%20Mini%E2%80%91Games%20%26%20Badges%20https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Partager sur WhatsApp</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Facebook</a> · <button type="button" id="tlm-share">Partager</button></p></footer><script>document.getElementById('tlm-share').onclick=()=>navigator.share?navigator.share({title:document.title,url:location.href}):navigator.clipboard.writeText(location.href).then(()=>alert('Lien copié'))</script><script type="module" src="js/app.js"></script></body></html>
