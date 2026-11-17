@@ -265,7 +265,7 @@ function initMemes() {
 }
 
 function shareMemeViaApp(topText, bottomText, templateId, imageUrl) {
-  // increment share counter
+// increment share counter
   STATE.sharesCount += 1;
   persistState();
 // build
@@ -277,7 +277,6 @@ function shareMemeViaApp(topText, bottomText, templateId, imageUrl) {
     timestamp: Date.now()
   };
   // send to server via API
-  await shareMemePayload(payload);
+  shareMemePayload(payload);
   // show feedback
   showShareToast('Mème partagé !');
-}
