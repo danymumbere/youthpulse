@@ -1,91 +1,149 @@
 "use strict";
 
-import { data } from "./data.js";
-import { initGame, resetGame } from "./game.js";
-import { renderBadges } from "./badges.js";
-import { renderLeaderboard } from "./leaderboard.js";
-import { initMemeEditor } from "./share.js";
-import { showNetworkError } from "./utils.js";
-import * as db from "./db.js";
+/**
+ * YouthPulse – Main Orchestrator
+ * Module ES, vanilla JS. Gère le routage, l'initialisation des modules,
+ * l'enregistrement du Service Worker et la liaison des événements UI.
+ */
 
-const sections = ["home", "game", "badges", "leaderboard", "videos", "memes", "share"];
+import * as Game from './game.js';
+import * as Badges from './badges.js';
+import * as Leaderboard from './leaderboard.js';
+import * as Share from './share.js';
+import * as Data from './data.js';
+import * as Utils from './utils.js';
+import * as DB from './db.js';
 
-function showSection(sectionId) {
-  sections.forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.style.display = id === sectionId ? "block" : "none";
-    }
-  });
-}
+// Liste des sections pour la navigation
+const SECTIONS = ['home', 'game', 'badges', 'leaderboard', 'videos', 'memes', 'share'];
 
-function initVideoFeed() {
-  const feed = document.getElementById("videoFeed");
-  if (!feed) return;
-  feed.innerHTML = "";
-  data.testimonies.forEach((t) => {
-    const article = document.createElement("article");
-    article.className = "video-card";
-    article.innerHTML = `
-      <h3>${t.author}</h3>
-      <p>“${t.quote}”</p>
-      <small>${t.context}</small>
-    `;
-    feed.appendChild(article);
-  });
-}
-
+/**
+ * Initialisation globale de l'application
+ */
 async function init() {
   try {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch((err) => {
-        console.error("Service Worker non enregistré :", err);
+    // 1. Enregistrement du Service Worker pour le mode hors-ligne
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch((err) => {
+        console.warn("Service Worker non enregistré :", err);
       });
     }
 
-    window.addEventListener("offline", () => {
-      const offlineEl = document.getElementById("offline");
-      if (offlineEl) offlineEl.style.display = "block";
-    });
-    window.addEventListener("online", () => {
-      const offlineEl = document.getElementById("offline");
-      if (offlineEl) offlineEl.style.display = "none";
-    });
+    // 2. Initialisation de la base de données
+    await DB.openDb();
 
+    // 3. Initialisation des modules UI
+    initNavigation();
     initVideoFeed();
-    initMemeEditor();
+    initGameModule();
+    initBadgesModule();
+    initLeaderboardModule();
+    initShareModule();
 
-    document.querySelectorAll("[data-nav]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        const target = e.target.getAttribute("data-nav");
-        showSection(target);
-        if (target === "badges") renderBadges();
-        if (target === "leaderboard") renderLeaderboard();
-      });
-    });
+    // 4. Affichage initial
+    showSection('home');
 
-    const startGameBtn = document.getElementById("startGameBtn");
-    if (startGameBtn) {
-      startGameBtn.addEventListener("click", () => {
-        showSection("game");
-        initGame();
-      });
-    }
-
-    const restartGameBtn = document.getElementById("restartGameBtn");
-    if (restartGameBtn) {
-      restartGameBtn.addEventListener("click", () => {
-        resetGame();
-      });
-    }
-
-    showSection("home");
   } catch (err) {
-    console.error("Erreur lors de l’initialisation de l’application :", err);
-    showNetworkError("Une erreur est survenue au chargement de l’application.");
+    console.error("Erreur critique lors de l'initialisation :", err);
   }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+/**
+ * Gestion de la navigation entre les sections
+ */
+function initNavigation() {
+  document.querySelectorAll('nav button, .nav-link').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const target = e.target.getAttribute('data-target');
+      if (target && SECTIONS.includes(target)) {
+        showSection(target);
+      }
+    });
+  });
+}
 
-export { showSection };
+function showSection(sectionId) {
+  SECTIONS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.display = (id === sectionId) ? 'block' : 'none';
+      el.setAttribute('aria-hidden', id !== sectionId);
+    }
+  });
+}
+
+/**
+ * Chargement du flux vidéo depuis data.js
+ */
+function initVideoFeed() {
+  const container = document.getElementById('videoFeed');
+  if (!container) return;
+
+  container.innerHTML = Data.testimonies.map(t => `
+    <div class="video-item" role="article" aria-labelledby="title-${t.id}">
+      <div class="video-placeholder" aria-label="Vidéo de ${t.author}">▶</div>
+      <h3 id="title-${t.id}">${t.author}</h3>
+      <p>« ${t.quote} »</p>
+      <small>${t.context}</small>
+    </div>
+  `).join('');
+}
+
+/**
+ * Initialisation du module de jeu
+ */
+function initGameModule() {
+  const startBtn = document.getElementById('startGameBtn');
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      showSection('game');
+      // Appel générique à l'initialisation du jeu
+      if (typeof Game.init === 'function') {
+        Game.init();
+      }
+    });
+  }
+}
+
+/**
+ * Initialisation des badges
+ */
+function initBadgesModule() {
+  if (typeof Badges.render === 'function') {
+    Badges.render(document.getElementById('badgesList'));
+  }
+}
+
+/**
+ * Initialisation du tableau des leaders
+ */
+function initLeaderboardModule() {
+  if (typeof Leaderboard.render === 'function') {
+    Leaderboard.render(document.getElementById('leaderboardList'));
+  }
+}
+
+/**
+ * Initialisation du partage
+ */
+function initShareModule() {
+  const shareBtn = document.getElementById('shareMemeBtn');
+  if (shareBtn && typeof Share.init === 'function') {
+    Share.init();
+  }
+}
+
+/**
+ * Gestion globale des erreurs
+ */
+window.addEventListener('error', (event) => {
+  console.error("Erreur non capturée :", event.message);
+  const offlineEl = document.getElementById('offline');
+  if (offlineEl) {
+    offlineEl.textContent = "Une erreur est survenue. Veuillez rafraîchir la page.";
+    offlineEl.style.display = 'block';
+  }
+});
+
+// Lancement de l'application
+document.addEventListener('DOMContentLoaded', init);
