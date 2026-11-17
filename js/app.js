@@ -288,7 +288,7 @@ function initEventHandlers() {
   // Redémarrage du jeu (si le bouton existe)
   const restartBtn = document.getElementById("restartGameBtn");
   if (restartBtn) {
-    restartBtn.addEventListener("click", async () => {
+restartBtn.addEventListener("click", async () => {
       try {
         const { score, durationSec } = await startGame();
         showToast(
@@ -298,16 +298,17 @@ function initEventHandlers() {
         updateBadgeUI({
           gameCompleted: true,
           score,
-          durationSec,
+          durationSec
         });
         updateLeaderboardUI();
-} catch (e) {
+      } catch (e) {
         console.error("Erreur pendant le redémarrage du jeu :", e);
       }
+    });
 
-      document.addEventListener("DOMContentLoaded", () => {
-        loadInitialContent();
-        initMemeGenerator();
-        initVideoFeed();
-        initEventHandlers();
-      });
+    document.addEventListener("DOMContentLoaded", () => {
+      loadInitialContent();
+      initMemeGenerator();
+      initVideoFeed();
+      initEventHandlers();
+    });
