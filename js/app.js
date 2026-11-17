@@ -301,16 +301,13 @@ function initEventHandlers() {
           durationSec,
         });
         updateLeaderboardUI();
-      } catch (e) {
+} catch (e) {
         console.error("Erreur pendant le redémarrage du jeu :", e);
-document.addEventListener("DOMContentLoaded", () => {
-  loadInitialContent();
-  initMemeGenerator();
-  initVideoFeed();
-  initEventHandlers();
-document.addEventListener("DOMContentLoaded", () => {
-  loadInitialContent();
-  initMemeGenerator();
-  initVideoFeed();
-  initEventHandlers();
-});
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        loadInitialContent();
+        initMemeGenerator();
+        initVideoFeed();
+        initEventHandlers();
+      });
