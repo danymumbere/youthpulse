@@ -333,12 +333,6 @@ function initApp() {
     navigator.serviceWorker
       .register("/sw.js")
 .then(() => {
-        state.swRegistered = true;
-      })
-      .catch((err) => console.error("SW registration failed:", err));
-  }
-}
-
 // Lancement au chargement du DOM
 /* -------------------------------------------------------------------------- */
 /*  Gestion du menu mobile                                                    */
@@ -358,6 +352,7 @@ if (typeof toggleMobileNav === 'undefined') {
       document.body.style.overflow = "hidden";
     }
   };
+}
 }
 
 function closeMobileNav() {
