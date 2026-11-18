@@ -332,7 +332,7 @@ function initApp() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
       .register("/sw.js")
-      .then(() => {
+.then(() => {
         state.swRegistered = true;
       })
       .catch((err) => console.error("SW registration failed:", err));
@@ -344,18 +344,20 @@ function initApp() {
 /*  Gestion du menu mobile                                                    */
 /* -------------------------------------------------------------------------- */
 
-function toggleMobileNav() {
-  const nav = getNav();
-  const backdrop = getNavBackdrop();
-  const isOpen = nav.classList.contains("is-open");
+if (typeof toggleMobileNav === 'undefined') {
+  var toggleMobileNav = function() {
+    const nav = getNav();
+    const backdrop = getNavBackdrop();
+    const isOpen = nav.classList.contains("is-open");
 
-  if (isOpen) {
-    closeMobileNav();
-  } else {
-    nav.classList.add("is-open");
-    backdrop.classList.add("is-visible");
-    document.body.style.overflow = "hidden";
-  }
+    if (isOpen) {
+      closeMobileNav();
+    } else {
+      nav.classList.add("is-open");
+      backdrop.classList.add("is-visible");
+      document.body.style.overflow = "hidden";
+    }
+  };
 }
 
 function closeMobileNav() {
