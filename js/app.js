@@ -1,31 +1,65 @@
 // js/app.js
+// YouthPulse – Main orchestrator (ES‑module, vanilla JS)
+// Responsibilities : service‑worker registration, navigation, UI initialisation,
+// global error handling and fallback UI for network errors.
+
 "use strict";
 
 import { data } from "./data.js";
-import { getScore, setScore, exportData, importData } from "./db.js";
-import { getUnlockedBadgeIds, checkAndUnlockBadges, renderBadges } from "./badges.js";
+import { exportData, importData } from "./db.js";
+import {
+  getUnlockedBadgeIds,
+  renderBadges,
+  // checkAndUnlockBadges is imported for side‑effects in other modules
+  // but not used directly here.
+} from "./badges.js";
 import { initGame, startGame, resetGame } from "./game.js";
 import { initLeaderboard, renderLeaderboard } from "./leaderboard.js";
 import { initShare } from "./share.js";
-import { showNetworkError } from "./utils.js";
 
+/**
+ * Simple UI fallback for network‑related errors.
+ * The function is defined locally to avoid a dependency on utils.js
+ * (which does not export a `showToast` function in the current build).
+ */
+function showNetworkError(message) {
+  console.error(message);
+  // Utilise un toast minimal si l’élément existe, sinon un alert.
+  const toast = document.getElementById("gameToast");
+  if (toast) {
+    toast.textContent = message;
+    toast.style.display = "block";
+    setTimeout(() => (toast.style.display = "none"), 4000);
+  } else {
+    alert(message);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Application initialisation                                                */
+/* -------------------------------------------------------------------------- */
 async function initApp() {
   try {
+    // Service‑worker registration (ultra‑light static hosting)
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch((err) => {
-        console.error("Service Worker registration failed:", err);
-      });
+      navigator.serviceWorker
+        .register("./sw.js")
+        .catch((err) => console.error("Service Worker registration failed:", err));
     }
 
+    // Render static sections with embedded content
     renderHomeContent();
     renderVideosContent();
     renderMemesContent();
     renderSettingsContent();
 
+    // Initialise functional modules
     initGameModule();
     initBadgesModule();
     initLeaderboardModule();
     initShareModule();
+
+    // Navigation & global error handling
     initNavigation();
     initGlobalErrors();
 
@@ -36,28 +70,29 @@ async function initApp() {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Section renderers (static content)                                        */
+/* -------------------------------------------------------------------------- */
 function renderHomeContent() {
   const homeTitle = document.getElementById("homeTitle");
-  if (homeTitle) {
-    homeTitle.textContent = "Bienvenue sur YouthPulse";
-  }
+  if (homeTitle) homeTitle.textContent = "Bienvenue sur YouthPulse";
 }
 
 function renderVideosContent() {
   const videosTitle = document.getElementById("videosTitle");
   const videoList = document.getElementById("videoList");
-  if (videosTitle) {
-    videosTitle.textContent = "Témoignages de Kinshasa";
-  }
+
+  if (videosTitle) videosTitle.textContent = "Témoignages de Kinshasa";
+
   if (videoList && data.testimonies) {
     videoList.innerHTML = "";
-    data.testimonies.forEach((testimony) => {
+    data.testimonies.forEach((t) => {
       const item = document.createElement("div");
       item.className = "video-item";
       item.innerHTML = `
-        <p class="testimony-quote">« ${testimony.quote} »</p>
-        <p class="testimony-author"><strong>${testimony.author}</strong></p>
-        <p class="testimony-context">${testimony.context}</p>
+        <p class="testimony-quote">« ${t.quote} »</p>
+        <p class="testimony-author"><strong>${t.author}</strong></p>
+        <p class="testimony-context">${t.context}</p>
       `;
       videoList.appendChild(item);
     });
@@ -66,9 +101,7 @@ function renderVideosContent() {
 
 function renderMemesContent() {
   const memesTitle = document.getElementById("memesTitle");
-  if (memesTitle) {
-    memesTitle.textContent = "Générateur de mèmes";
-  }
+  if (memesTitle) memesTitle.textContent = "Générateur de mèmes";
 }
 
 function renderSettingsContent() {
@@ -77,9 +110,7 @@ function renderSettingsContent() {
   const importBtn = document.getElementById("importDataBtn");
   const importInput = document.getElementById("importDataInput");
 
-  if (settingsTitle) {
-    settingsTitle.textContent = "Paramètres et données";
-  }
+  if (settingsTitle) settingsTitle.textContent = "Paramètres et données";
 
   if (exportBtn) {
     exportBtn.addEventListener("click", async () => {
@@ -119,99 +150,49 @@ function renderSettingsContent() {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Module initialisation helpers                                            */
+/* -------------------------------------------------------------------------- */
 function initGameModule() {
   const launchBtn = document.getElementById("launchGameBtn");
   const restartBtn = document.getElementById("restartGameBtn");
   const gameTitle = document.getElementById("gameTitle");
 
-  if (gameTitle) {
-    gameTitle.textContent = "Mini-jeu instantané";
-  }
+  if (gameTitle) gameTitle.textContent = "Mini‑jeu instantané";
 
   initGame();
 
-  if (launchBtn) {
-    launchBtn.addEventListener("click", () => {
-      startGame();
-    });
-  }
-
-  if (restartBtn) {
-    restartBtn.addEventListener("click", () => {
-      resetGame();
-    });
-  }
+  if (launchBtn) launchBtn.addEventListener("click", () => startGame());
+  if (restartBtn) restartBtn.addEventListener("click", () => resetGame());
 }
 
 function initBadgesModule() {
   const badgesTitle = document.getElementById("badgesTitle");
-  if (badgesTitle) {
-    badgesTitle.textContent = "Vos badges";
-  }
+  if (badgesTitle) badgesTitle.textContent = "Vos badges";
+
+  // Le rendu dépend des badges déjà débloqués dans IndexedDB
   renderBadges();
 }
 
 function initLeaderboardModule() {
   const leaderboardTitle = document.getElementById("leaderboardTitle");
   const leaderboardDesc = document.getElementById("leaderboardDesc");
-  if (leaderboardTitle) {
-    leaderboardTitle.textContent = "Tableau des scores";
-  }
-  if (leaderboardDesc) {
-    leaderboardDesc.textContent = "Classement local basé sur vos performances.";
-  }
+
+  if (leaderboardTitle) leaderboardTitle.textContent = "Tableau des scores";
+  if (leaderboardDesc) leaderboardDesc.textContent = "Classement local basé sur vos performances.";
+
   initLeaderboard();
   renderLeaderboard();
 }
 
 function initShareModule() {
   const shareTitle = document.getElementById("shareTitle");
-  if (shareTitle) {
-    shareTitle.textContent = "Partager l'application";
-  }
+  if (shareTitle) shareTitle.textContent = "Partager l’application";
+
   initShare();
 }
 
-function initNavigation() {
-  const sections = ["home", "game", "badges", "leaderboard", "videos", "memes", "share", "settings", "offline"];
-  
-  window.addEventListener("hashchange", () => {
-    const hash = window.location.hash.replace("#", "") || "home";
-    sections.forEach((secId) => {
-      const el = document.getElementById(secId);
-      if (el) {
-        if (secId === hash) {
-          el.style.display = "block";
-        } else {
-          el.style.display = "none";
-        }
-      }
-    });
-  });
-
-  const currentHash = window.location.hash.replace("#", "") || "home";
-  sections.forEach((secId) => {
-    const el = document.getElementById(secId);
-    if (el) {
-      if (secId === currentHash) {
-        el.style.display = "block";
-      } else {
-        el.style.display = "none";
-      }
-    }
-  });
-}
-
-function initGlobalErrors() {
-  window.addEventListener("error", (event) => {
-    console.error("Erreur globale capturée :", event.error);
-  });
-
-  window.addEventListener("unhandledrejection", (event) => {
-    console.error("Promesse rejetée non gérée :", event.reason);
-  });
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  initApp();
-});
+/* -------------------------------------------------------------------------- */
+/*  Navigation (hash‑based, mobile‑first)                                    */
+/* -------------------------------------------------------------------------- */
+function initNavigation
