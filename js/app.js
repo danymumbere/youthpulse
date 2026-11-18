@@ -183,8 +183,6 @@ function initLeaderboardModule() {
 
   initLeaderboard();
   renderLeaderboard();
-}
-
 function initShareModule() {
   const shareTitle = document.getElementById("shareTitle");
   if (shareTitle) shareTitle.textContent = "Partager l’application";
@@ -195,4 +193,4 @@ function initShareModule() {
 /* -------------------------------------------------------------------------- */
 /*  Navigation (hash‑based, mobile‑first)                                    */
 /* -------------------------------------------------------------------------- */
-function initNavigation
+function initNavigation() {}
