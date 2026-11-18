@@ -1,196 +1,415 @@
-// js/app.js
-// YouthPulse – Main orchestrator (ES‑module, vanilla JS)
-// Responsibilities : service‑worker registration, navigation, UI initialisation,
-// global error handling and fallback UI for network errors.
-
 "use strict";
 
+/* -------------------------------------------------------------------------- */
+/*  YouthPulse – Orchestrateur principal (app.js)                             */
+/*  Module ES, JavaScript vanilla.                                             */
+/*  Rôle : initialisation, routage SPA, enregistrement du Service Worker,      */
+/*  chargement des modules, gestion globale des erreurs et rendu du contenu.   */
+/* -------------------------------------------------------------------------- */
+
 import { data } from "./data.js";
-import { exportData, importData } from "./db.js";
 import {
+  startGame,
+  restartGame,
+  showGameToast,
+  renderGamePrompt,
+} from "./game.js";
+import { renderBadges, checkAndUnlockBadges } from "./badges.js";
+import { renderLeaderboard } from "./leaderboard.js";
+import {
+  renderMemePreview,
+  shareMeme,
+  resetMemeForm,
+} from "./share.js";
+import {
+  getScore,
+  setScore,
   getUnlockedBadgeIds,
-  renderBadges,
-  // checkAndUnlockBadges is imported for side‑effects in other modules
-  // but not used directly here.
-} from "./badges.js";
-import { initGame, startGame, resetGame } from "./game.js";
-import { initLeaderboard, renderLeaderboard } from "./leaderboard.js";
-import { initShare } from "./share.js";
+  getLeaderboardEntries,
+  addLeaderboardEntry,
+  exportData,
+  importData,
+} from "./db.js";
+import {
+  $,
+  $$,
+  showNetworkError,
+  showSuccess,
+  showWarning,
+  formatTimestamp,
+  downloadJSON,
+  clamp,
+  escapeHtml,
+} from "./utils.js";
 
-/**
- * Simple UI fallback for network‑related errors.
- * The function is defined locally to avoid a dependency on utils.js
- * (which does not export a `showToast` function in the current build).
- */
-function showNetworkError(message) {
-  console.error(message);
-  // Utilise un toast minimal si l’élément existe, sinon un alert.
-  const toast = document.getElementById("gameToast");
-  if (toast) {
-    toast.textContent = message;
-    toast.style.display = "block";
-    setTimeout(() => (toast.style.display = "none"), 4000);
-  } else {
-    alert(message);
+/* -------------------------------------------------------------------------- */
+/*  Constantes de configuration                                               */
+/* -------------------------------------------------------------------------- */
+
+const APP_NAME = "YouthPulse";
+const NAV_ITEMS = [
+  { id: "home", label: "Accueil", icon: "🏠" },
+  { id: "game", label: "Jeu", icon: "🎮" },
+  { id: "badges", label: "Badges", icon: "🏅" },
+  { id: "leaderboard", label: "Classement", icon: "🏆" },
+  { id: "videos", label: "Témoignages", icon: "🎥" },
+  { id: "memes", label: "Mèmes", icon: "😂" },
+  { id: "share", label: "Partager", icon: "📤" },
+  { id: "settings", label: "Réglages", icon: "⚙️" },
+];
+
+const FEATURE_ITEMS = [
+  { id: "ultraLight", label: "Ultra‑léger", icon: "🪶", desc: "Moins de 30 Ko gzippé, chargement en 2 s." },
+  { id: "mobileUI", label: "Mobile d’abord", icon: "📱", desc: "Cibles tactiles ≥ 44 px, dès 320 px de large." },
+  { id: "embeddedContent", label: "Contenu embarqué", icon: "📦", desc: "Aucun appel API, tout est local." },
+];
+
+const SOCIAL_LINKS = [
+  { id: "whatsappShareBtn", label: "WhatsApp", icon: "💬", color: "var(--whatsapp)" },
+  { id: "facebookShareBtn", label: "Facebook", icon: "📘", color: "var(--facebook)" },
+  { id: "tiktokShareBtn", label: "TikTok", icon: "🎵", color: "var(--tiktok)" },
+];
+
+/* -------------------------------------------------------------------------- */
+/*  État global de l’application                                              */
+/* -------------------------------------------------------------------------- */
+
+const state = {
+  currentView: "home",
+  isOnline: navigator.onLine,
+  score: 0,
+  unlockedBadges: [],
+  leaderboard: [],
+  lastGameResult: null,
+  sharesCount: 0,
+  swRegistered: false,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Utilitaires internes                                                      */
+/* -------------------------------------------------------------------------- */
+
+function getViewElement(viewId) {
+  return $(viewId);
+}
+
+function getNavButton(viewId) {
+  return $(`nav-btn-${viewId}`);
+}
+
+function getNavList() {
+  return $("#navList");
+}
+
+function getOfflineBanner() {
+  return $("#offlineBanner");
+}
+
+function getGlobalToast() {
+  return $("#globalToast");
+}
+
+function getGlobalToastMsg() {
+  return $("#globalToastMsg");
+}
+
+function getGlobalToastClose() {
+  return $("#globalToastClose");
+}
+
+function getNavToggle() {
+  return $("#navToggle");
+}
+
+function getNav() {
+  return $("#nav");
+}
+
+function getNavBackdrop() {
+  return $("#navBackdrop");
+}
+
+function getNavBadgeCount() {
+  return $("#navBadgeCount");
+}
+
+function getNavScore() {
+  return $("#navScore");
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Toast global                                                              */
+/* -------------------------------------------------------------------------- */
+
+let toastTimer = null;
+
+function showToast(message, type = "success", duration = 3200) {
+  const toast = getGlobalToast();
+  const msg = getGlobalToastMsg();
+  const closeBtn = getGlobalToastClose();
+  if (!toast || !msg) return;
+
+  const icons = { success: "✅", error: "⚠️", warning: "⚠️", info: "ℹ️" };
+  msg.textContent = `${icons[type] || "ℹ️"} ${message}`;
+  toast.dataset.type = type;
+  toast.classList.add("is-visible");
+  toast.setAttribute("aria-hidden", "false");
+
+  if (closeBtn) {
+    closeBtn.onclick = () => hideToast();
+  }
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, duration);
+}
+
+function hideToast() {
+  const toast = getGlobalToast();
+  if (!toast) return;
+  toast.classList.remove("is-visible");
+  toast.setAttribute("aria-hidden", "true");
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Application initialisation                                                */
+/*  Navigation / routage SPA                                                  */
 /* -------------------------------------------------------------------------- */
-async function initApp() {
-  try {
-    // Service‑worker registration (ultra‑light static hosting)
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("./sw.js")
-        .catch((err) => console.error("Service Worker registration failed:", err));
+
+function buildNav() {
+  const navList = getNavList();
+  if (!navList) return;
+
+  navList.innerHTML = NAV_ITEMS.map(
+    (item) => `
+      <li class="nav__item">
+        <button
+          type="button"
+          class="nav__btn"
+          data-view="${item.id}"
+          id="nav-btn-${item.id}"
+          aria-label="${item.label}"
+        >
+          <span class="nav__icon" aria-hidden="true">${item.icon}</span>
+          <span class="nav__label">${item.label}</span>
+          ${item.id === "badges" ? `<span class="nav__badge" id="navBadgeCount" hidden>0</span>` : ""}
+        </button>
+      </li>
+    `
+  ).join("");
+
+  navList.addEventListener("click", (e) => {
+    const btn = e.target.closest(".nav__btn");
+    if (!btn) return;
+    const view = btn.dataset.view;
+    if (view) navigateTo(view);
+  });
+}
+
+function navigateTo(viewId) {
+  const target = getViewElement(viewId);
+  if (!target) {
+    showWarning(`Section inconnue : ${viewId}`);
+    return;
+  }
+
+  // Masquer toutes les vues
+  $$(".view").forEach((v) => {
+    v.classList.remove("is-active");
+    v.setAttribute("aria-hidden", "true");
+  });
+
+  // Afficher la cible
+  target.classList.add("is-active");
+  target.setAttribute("aria-hidden", "false");
+
+  // Mettre à jour l’aria-current de la navigation
+  $$(".nav__btn").forEach((btn) => {
+    if (btn.dataset.view === viewId) {
+      btn.setAttribute("aria-current", "page");
+      btn.classList.add("is-active");
+    } else {
+      btn.removeAttribute("aria-current");
+      btn.classList.remove("is-active");
     }
+  });
 
-    // Render static sections with embedded content
-    renderHomeContent();
-    renderVideosContent();
-    renderMemesContent();
-    renderSettingsContent();
+  state.currentView = viewId;
 
-    // Initialise functional modules
-    initGameModule();
-    initBadgesModule();
-    initLeaderboardModule();
-    initShareModule();
+  // Fermer le menu mobile s’il est ouvert
+  closeMobileNav();
 
-    // Navigation & global error handling
-    initNavigation();
-    initGlobalErrors();
+  // Scroll vers le haut
+  window.scrollTo({ top: 0, behavior: "smooth" });
 
-    console.log("YouthPulse initialisé avec succès.");
-  } catch (err) {
-    console.error("Erreur lors de l'initialisation de l'application :", err);
-    showNetworkError("Une erreur est survenue lors du chargement de l'application.");
+  // Rafraîchir le contenu de la vue
+  refreshView(viewId);
+
+  // Mettre à jour le titre
+  const item = NAV_ITEMS.find((n) => n.id === viewId);
+  if (item) {
+    document.title = `${item.label} – ${APP_NAME}`;
+  }
+
+  // Focus sur le titre de la vue pour l’accessibilité
+  const title = target.querySelector(".view__title");
+  if (title) {
+    title.setAttribute("tabindex", "-1");
+    title.focus({ preventScroll: true });
   }
 }
 
+function refreshView(viewId) {
+  switch (viewId) {
+    case "home":
+      renderHome();
+      break;
+    case "game":
+      renderGameView();
 /* -------------------------------------------------------------------------- */
-/*  Section renderers (static content)                                        */
+/*  Gestion du menu mobile                                                    */
 /* -------------------------------------------------------------------------- */
-function renderHomeContent() {
-  const homeTitle = document.getElementById("homeTitle");
-  if (homeTitle) homeTitle.textContent = "Bienvenue sur YouthPulse";
-}
 
-function renderVideosContent() {
-  const videosTitle = document.getElementById("videosTitle");
-  const videoList = document.getElementById("videoList");
+function toggleMobileNav() {
+  const nav = getNav();
+  const backdrop = getNavBackdrop();
+  const isOpen = nav.classList.contains("is-open");
 
-  if (videosTitle) videosTitle.textContent = "Témoignages de Kinshasa";
-
-  if (videoList && data.testimonies) {
-    videoList.innerHTML = "";
-    data.testimonies.forEach((t) => {
-      const item = document.createElement("div");
-      item.className = "video-item";
-      item.innerHTML = `
-        <p class="testimony-quote">« ${t.quote} »</p>
-        <p class="testimony-author"><strong>${t.author}</strong></p>
-        <p class="testimony-context">${t.context}</p>
-      `;
-      videoList.appendChild(item);
-    });
+  if (isOpen) {
+    closeMobileNav();
+  } else {
+    nav.classList.add("is-open");
+    backdrop.classList.add("is-visible");
+    document.body.style.overflow = "hidden";
   }
 }
 
-function renderMemesContent() {
-  const memesTitle = document.getElementById("memesTitle");
-  if (memesTitle) memesTitle.textContent = "Générateur de mèmes";
+function closeMobileNav() {
+  const nav = getNav();
+  const backdrop = getNavBackdrop();
+  nav.classList.remove("is-open");
+  backdrop.classList.remove("is-visible");
+  document.body.style.overflow = "";
 }
 
-function renderSettingsContent() {
-  const settingsTitle = document.getElementById("settingsTitle");
-  const exportBtn = document.getElementById("exportDataBtn");
-  const importBtn = document.getElementById("importDataBtn");
-  const importInput = document.getElementById("importDataInput");
+/* -------------------------------------------------------------------------- */
+/*  Initialisation                                                            */
+/* -------------------------------------------------------------------------- */
 
-  if (settingsTitle) settingsTitle.textContent = "Paramètres et données";
+function initApp() {
+  // Construction de la navigation
+  buildNav();
 
-  if (exportBtn) {
-    exportBtn.addEventListener("click", async () => {
-      try {
-        const jsonString = await exportData();
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "youthpulse_data.json";
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (err) {
-        console.error("Erreur lors de l'exportation :", err);
-        showNetworkError("Impossible d'exporter les données.");
-      }
-    });
+  // Événements de navigation mobile
+  const navToggle = getNavToggle();
+  if (navToggle) navToggle.addEventListener("click", toggleMobileNav);
+  const navBackdrop = getNavBackdrop();
+  if (navBackdrop) navBackdrop.addEventListener("click", closeMobileNav);
+
+  // Gestion de l'état en ligne/hors ligne
+  window.addEventListener("online", () => {
+    state.isOnline = true;
+    getOfflineBanner().hidden = true;
+    showToast("Connexion rétablie.", "success");
+  });
+
+  window.addEventListener("offline", () => {
+    state.isOnline = false;
+    getOfflineBanner().hidden = false;
+    showToast("Vous êtes hors ligne.", "warning");
+  });
+
+  // Chargement des données initiales
+  loadState();
+  updateNavUI();
+
+  // Navigation initiale
+  navigateTo("home");
+
+  // Enregistrement du Service Worker
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => {
+        state.swRegistered = true;
+      })
+      .catch((err) => console.error("SW registration failed:", err));
   }
+}
 
-  if (importBtn && importInput) {
-    importBtn.addEventListener("click", async () => {
-      const file = importInput.files[0];
-      if (!file) {
-        showNetworkError("Veuillez sélectionner un fichier JSON à importer.");
-        return;
-      }
-      try {
-        const text = await file.text();
-        await importData(text);
-        alert("Données importées avec succès !");
-        window.location.reload();
-      } catch (err) {
-        console.error("Erreur lors de l'importation :", err);
-        showNetworkError("Fichier de données invalide.");
-      }
-    });
+// Lancement au chargement du DOM
+/* -------------------------------------------------------------------------- */
+/*  Gestion du menu mobile                                                    */
+/* -------------------------------------------------------------------------- */
+
+function toggleMobileNav() {
+  const nav = getNav();
+  const backdrop = getNavBackdrop();
+  const isOpen = nav.classList.contains("is-open");
+
+  if (isOpen) {
+    closeMobileNav();
+  } else {
+    nav.classList.add("is-open");
+    backdrop.classList.add("is-visible");
+    document.body.style.overflow = "hidden";
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Module initialisation helpers                                            */
-/* -------------------------------------------------------------------------- */
-function initGameModule() {
-  const launchBtn = document.getElementById("launchGameBtn");
-  const restartBtn = document.getElementById("restartGameBtn");
-  const gameTitle = document.getElementById("gameTitle");
-
-  if (gameTitle) gameTitle.textContent = "Mini‑jeu instantané";
-
-  initGame();
-
-  if (launchBtn) launchBtn.addEventListener("click", () => startGame());
-  if (restartBtn) restartBtn.addEventListener("click", () => resetGame());
-}
-
-function initBadgesModule() {
-  const badgesTitle = document.getElementById("badgesTitle");
-  if (badgesTitle) badgesTitle.textContent = "Vos badges";
-
-  // Le rendu dépend des badges déjà débloqués dans IndexedDB
-  renderBadges();
-}
-
-function initLeaderboardModule() {
-  const leaderboardTitle = document.getElementById("leaderboardTitle");
-  const leaderboardDesc = document.getElementById("leaderboardDesc");
-
-  if (leaderboardTitle) leaderboardTitle.textContent = "Tableau des scores";
-  if (leaderboardDesc) leaderboardDesc.textContent = "Classement local basé sur vos performances.";
-
-  initLeaderboard();
-  renderLeaderboard();
-function initShareModule() {
-  const shareTitle = document.getElementById("shareTitle");
-  if (shareTitle) shareTitle.textContent = "Partager l’application";
-
-  initShare();
+function closeMobileNav() {
+  const nav = getNav();
+  const backdrop = getNavBackdrop();
+  nav.classList.remove("is-open");
+  backdrop.classList.remove("is-visible");
+  document.body.style.overflow = "";
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Navigation (hash‑based, mobile‑first)                                    */
+/*  Initialisation                                                            */
 /* -------------------------------------------------------------------------- */
-function initNavigation() {}
+
+function initApp() {
+  // Construction de la navigation
+  buildNav();
+
+  // Événements de navigation mobile
+  const navToggle = getNavToggle();
+  if (navToggle) navToggle.addEventListener("click", toggleMobileNav);
+  const navBackdrop = getNavBackdrop();
+  if (navBackdrop) navBackdrop.addEventListener("click", closeMobileNav);
+
+  // Gestion de l'état en ligne/hors ligne
+  window.addEventListener("online", () => {
+    state.isOnline = true;
+    getOfflineBanner().hidden = true;
+    showToast("Connexion rétablie.", "success");
+  });
+
+  window.addEventListener("offline", () => {
+    state.isOnline = false;
+    getOfflineBanner().hidden = false;
+    showToast("Vous êtes hors ligne.", "warning");
+  });
+
+  // Chargement des données initiales
+  loadState();
+  updateNavUI();
+
+  // Navigation initiale
+  navigateTo("home");
+
+  // Enregistrement du Service Worker
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => {
+        state.swRegistered = true;
+      })
+      .catch((err) => console.error("SW registration failed:", err));
+  }
+}
+
+// Lancement au chargement du DOM
+document.addEventListener("DOMContentLoaded", initApp);
