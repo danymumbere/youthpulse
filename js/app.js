@@ -51,6 +51,7 @@ const initUI = () => {
   const topTextInput = document.getElementById('topTextInput');
   const bottomTextInput = document.getElementById('bottomTextInput');
   const memeCanvas = document.getElementById('memeCanvas');
+  const previewMemeBtn = document.getElementById('previewMemeBtn');
 
   const updateMemePreview = () => {
     const ctx = memeCanvas.getContext('2d');
@@ -74,6 +75,8 @@ const initUI = () => {
   [topTextInput, bottomTextInput, memeImageInput].forEach(el => {
     el.addEventListener('input', updateMemePreview);
   });
+
+  previewMemeBtn.addEventListener('click', updateMemePreview);
 };
 
 /**
@@ -131,6 +134,9 @@ const init = async () => {
     // Initialize Modules
     await badges.init();
     await leaderboard.init();
+
+    // Show initial toast if needed
+    utils.showToast('Bienvenue sur YouthPulse !', 3000);
 
   } catch (error) {
     console.error('Application initialization failed:', error);
