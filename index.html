@@ -1,107 +1,69 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>YouthPulse – Faith‑Powered Mini‑Games &amp; Badges</title><meta name="description" content="YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps."><meta name="keywords" content="YouthPulse, faith games, badges, memes, Kinshasa, static web, mobile, offline, sharing, gamification"><link rel="canonical" href="https://danymumbere.github.io/youthpulse/"><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0a7d6c"><meta property="og:type" content="website"><meta property="og:site_name" content="The Lamp's Mark"><meta property="og:title" content="YouthPulse – Faith‑Powered Mini‑Games &amp; Badges"><meta property="og:description" content="YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps."><meta property="og:url" content="https://danymumbere.github.io/youthpulse/"><meta property="og:image" content="https://danymumbere.github.io/youthpulse/og.svg"><meta property="og:image:alt" content="YouthPulse – Faith‑Powered Mini‑Games &amp; Badges"><meta property="og:locale" content="fr_FR"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="YouthPulse – Faith‑Powered Mini‑Games &amp; Badges"><meta name="twitter:description" content="YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps."><meta name="twitter:image" content="https://danymumbere.github.io/youthpulse/og.svg"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"YouthPulse – Faith‑Powered Mini‑Games & Badges","description":"YouthPulse is a static, ultra‑light web hub where Kinshasa’s Christian youth play 2‑3 minute faith‑games, earn badges, share memes, and watch local video testimonies—all loading in under 2 seconds on 2 Mbps.","url":"https://danymumbere.github.io/youthpulse/","applicationCategory":"LifestyleApplication","inLanguage":"fr","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"creator":{"@type":"Organization","name":"The Lamp's Mark","url":"https://thelampsmark.pages.dev/"}}</script><link rel="stylesheet" href="style.css"></head><body><main>
-  <!-- Accueil – Mobile‑first, navigation principale -->
-  <section id="home" data-feature="home" aria-labelledby="homeTitle">
-    <h1 id="homeTitle">YouthPulse – Découvre, crée, partage</h1>
-    <p>Explore des jeux narratifs courts, regarde les témoignages de jeunes de Kinshasa, crée des memes et gagne des badges ! Tout fonctionne hors‑ligne.</p>
-    <button type="button" id="launchGameBtn" aria-controls="game" aria-label="Lancer une partie instantanée">Jouer : Instant‑Snapshot</button>
-    <nav aria-label="Navigation principale">
-      <ul class="nav-list">
-        <li><a href="#badges" aria-label="Voir mes badges">Mes badges</a></li>
-        <li><a href="#leaderboard" aria-label="Voir le classement">Classement</a></li>
-        <li><a href="#videos" aria-label="Regarder les témoignages vidéo">Témoignages</a></li>
-        <li><a href="#memes" aria-label="Créer un meme">Créer un meme</a></li>
-        <li><a href="#share" aria-label="Partager sur les réseaux">Partager</a></li>
-        <li><a href="#settings" aria-label="Paramètres et exportation">Paramètres</a></li>
-      </ul>
-    </nav>
+  <nav>
+    <button onclick="showSection('home')">Accueil</button>
+    <button onclick="showSection('game')">Jeu</button>
+    <button onclick="showSection('badges')">Badges</button>
+    <button onclick="showSection('leaderboard')">Classement</button>
+    <button onclick="showSection('videos')">Vidéos</button>
+    <button onclick="showSection('memes')">Memes</button>
+    <button onclick="showSection('share')">Partager</button>
+    <button onclick="showSection('offline')">Hors ligne</button>
+  </nav>
+
+  <section id="home" data-feature="instant-snapshot-mini-games">
+    <h1>Bienvenue sur YouthPulse</h1>
+    <p>Lancez un jeu rapide pour gagner des badges et des points !</p>
+    <button id="launch-game">Lancer le jeu</button>
   </section>
 
-  <!-- Jeu instantané – 2 à 3 minutes -->
-  <section id="game" data-feature="instant-snapshot-mini-games" aria-labelledby="gameTitle" hidden>
-    <h2 id="gameTitle">Jeu : Instant‑Snapshot</h2>
-    <div id="gamePrompt" class="game-prompt" aria-live="polite"></div>
-    <div id="gameArea" class="game-area" role="region" aria-label="Zone de jeu"></div>
-    <button type="button" id="restartGameBtn" aria-label="Recommencer le jeu">Recommencer</button>
-    <div id="gameToast" class="toast" role="status" aria-live="assertive" hidden></div>
+  <section id="game" style="display:none;" data-feature="instant-snapshot-mini-games">
+    <h2>Jeu en cours</h2>
+    <div id="game-loader">Chargement du jeu...</div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="timer">Temps restant : 3:00</div>
+    <div id="score">Score : 0</div>
+    <div id="game-completed" style="display:none;">Jeu terminé !</div>
   </section>
 
-  <!-- Badges – Système de récompenses -->
-  <section id="badges" data-feature="badge-system-and-local-leaderboard" aria-labelledby="badgesTitle">
-    <h2 id="badgesTitle">Mes badges</h2>
-    <p>Chaque badge reflète une action accomplie : jouer, créer, partager ou visionner un témoignage.</p>
-    <div id="badgesContainer" class="badge-grid" aria-live="polite"></div>
+  <section id="badges" style="display:none;" data-feature="badge-system-and-local-leaderboard">
+    <h2>Mes Badges</h2>
+    <div id="badge-container"></div>
   </section>
 
-  <!-- Classement – Score local -->
-  <section id="leaderboard" aria-labelledby="leaderboardTitle">
-    <h2 id="leaderboardTitle">Classement local</h2>
-    <p>Les scores sont enregistrés dans votre navigateur et triés du plus élevé au plus bas.</p>
-    <table id="leaderboardTable" class="leaderboard-table" aria-describedby="leaderboardDesc">
-      <caption id="leaderboardDesc">Classement des utilisateurs locaux</caption>
-      <thead>
-        <tr>
-          <th scope="col">Rang</th>
-          <th scope="col">Nom d’utilisateur</th>
-          <th scope="col">Score</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+  <section id="leaderboard" style="display:none;" data-feature="badge-system-and-local-leaderboard">
+    <h2>Classement Local</h2>
+    <ol id="leaderboard-list"></ol>
   </section>
 
-  <!-- Témoignages vidéo – Identité locale -->
-  <section id="videos" data-feature="local-identity-video-feed" aria-labelledby="videosTitle">
-    <h2 id="videosTitle">Témoignages de jeunes de Kinshasa</h2>
-    <ul id="videoList" class="video-list" aria-live="polite"></ul>
+  <section id="videos" style="display:none;" data-feature="local-identity-video-feed">
+    <h2>Témoignages des jeunes de Kinshasa</h2>
+    <div id="video-container"></div>
   </section>
 
-  <!-- Générateur de memes – Création et partage -->
-  <section id="memes" data-feature="playful-meme-generator-and-share" aria-labelledby="memesTitle">
-    <h2 id="memesTitle">Créer un meme</h2>
-    <form id="memeForm" novalidate>
-      <label for="memeImageInput">Choisir une image de base</label>
-      <input type="file" id="memeImageInput" accept="image/*" aria-required="true">
-      <label for="topTextInput">Texte du haut</label>
-      <input type="text" id="topTextInput" placeholder="Texte du haut" maxlength="80">
-      <label for="bottomTextInput">Texte du bas</label>
-      <input type="text" id="bottomTextInput" placeholder="Texte du bas" maxlength="80">
-      <button type="button" id="previewMemeBtn">Aperçu du meme</button>
-    </form>
-    <canvas id="memeCanvas" width="300" height="300" aria-label="Aperçu du meme" role="img"></canvas>
-    <button type="button" id="shareMemeBtn" aria-label="Partager le meme">Partager le meme</button>
+  <section id="memes" style="display:none;" data-feature="playful-meme-generator-and-share">
+    <h2>Générateur de Memes</h2>
+    <div id="meme-editor"></div>
+    <button id="share-meme">Partager ce meme</button>
   </section>
 
-  <!-- Partage social – Boutons natifs -->
-  <section id="share" data-feature="social-sharing-via-apps" aria-labelledby="shareTitle">
-    <h2 id="shareTitle">Partager votre création</h2>
-    <p>Utilisez les applications natives pour diffuser votre meme ou votre score.</p>
-    <div class="share-buttons">
-      <button type="button" id="whatsappShareBtn" aria-label="Partager sur WhatsApp">WhatsApp</button>
-      <button type="button" id="facebookShareBtn" aria-label="Partager sur Facebook">Facebook</button>
-      <button type="button" id="tiktokShareBtn" aria-label="Partager sur TikTok">TikTok</button>
-    </div>
+  <section id="share" style="display:none;" data-feature="social-sharing-via-apps">
+    <h2>Partager sur les réseaux</h2>
+    <button id="share-whatsapp">WhatsApp</button>
+    <button id="share-facebook">Facebook</button>
+    <button id="share-tiktok">TikTok</button>
   </section>
 
-  <!-- Paramètres – Export / import des données -->
-  <section id="settings" data-feature="local-persistence-for-progress" aria-labelledby="settingsTitle">
-    <h2 id="settingsTitle">Paramètres</h2>
-    <button type="button" id="exportDataBtn" aria-label="Exporter les données locales">Exporter les données (JSON)</button>
-    <input type="file" id="importDataInput" accept="application/json" aria-label="Importer des données locales" hidden>
-    <button type="button" id="importDataBtn" aria-label="Importer les données locales">Importer les données (JSON)</button>
+  <section id="offline" style="display:none;" data-feature="simple-offline-fallback">
+    <h2>Mode Hors Ligne</h2>
+    <p>Vous êtes actuellement hors ligne. Certaines fonctionnalités sont limitées.</p>
   </section>
 
-  <!-- Gestion du mode hors‑ligne -->
-  <section id="offline" data-feature="simple-offline-fallback" aria-labelledby="offlineTitle" hidden>
-    <h2 id="offlineTitle">Mode hors‑ligne</h2>
-    <p>Vous êtes hors‑ligne ; le site fonctionne avec les données en cache. Certaines fonctions nécessitant le réseau ne sont pas disponibles.</p>
+  <section id="settings" style="display:none;" data-feature="local-persistence-for-progress">
+    <h2>Paramètres</h2>
+    <button id="export-data">Exporter mes données</button>
   </section>
+</main>
 
-  <!-- Fonction ultra‑light static hosting – Indicateur -->
-  <section id="ultraLight" data-feature="ultra-light-static-hosting" hidden aria-hidden="true"></section>
-
-  <!-- Fonction mobile‑first responsive UI – Indicateur -->
-  <section id="mobileUI" data-feature="mobile-first-responsive-ui" hidden aria-hidden="true"></section>
-
-  <!-- Contenu embarqué réel – Indicateur -->
-  <section id="embeddedContent" data-feature="real-world-embedded-content" hidden aria-hidden="true"></section>
-</main><div id="badgesList"></div><div id="leaderboardList"></div><footer class="tlm"><p>Créé par <a href="https://thelampsmark.pages.dev/" target="_blank" rel="noopener">The Lamp's Mark</a></p><p>Cette application est gratuite. Pour la soutenir : mobile money Africell <strong>0906253050</strong></p><p><a href="https://wa.me/?text=YouthPulse%20%E2%80%93%20Faith%E2%80%91Powered%20Mini%E2%80%91Games%20%26%20Badges%20https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Partager sur WhatsApp</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Facebook</a> · <button type="button" id="tlm-share">Partager</button></p></footer><script>document.getElementById('tlm-share').onclick=()=>navigator.share?navigator.share({title:document.title,url:location.href}):navigator.clipboard.writeText(location.href).then(()=>alert('Lien copié'))</script><script type="module" src="js/app.js"></script></body></html>
+<div data-feature="mobile-first-responsive-ui" style="display:none;"></div>
+<div data-feature="real-world-embedded-content" style="display:none;"></div>
+<div data-feature="ultra-light-static-hosting" style="display:none;"></div><div id="badgesList"></div><div id="leaderboardList"></div><footer class="tlm"><p>Créé par <a href="https://thelampsmark.pages.dev/" target="_blank" rel="noopener">The Lamp's Mark</a></p><p>Cette application est gratuite. Pour la soutenir : mobile money Africell <strong>0906253050</strong></p><p><a href="https://wa.me/?text=YouthPulse%20%E2%80%93%20Faith%E2%80%91Powered%20Mini%E2%80%91Games%20%26%20Badges%20https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Partager sur WhatsApp</a> · <a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdanymumbere.github.io%2Fyouthpulse%2F" target="_blank" rel="noopener">Facebook</a> · <button type="button" id="tlm-share">Partager</button></p></footer><script>document.getElementById('tlm-share').onclick=()=>navigator.share?navigator.share({title:document.title,url:location.href}):navigator.clipboard.writeText(location.href).then(()=>alert('Lien copié'))</script><script type="module" src="js/app.js"></script></body></html>

@@ -1,211 +1,167 @@
 "use strict";
 
-/* -------------------------------------------------------------------------- */
-/*  YouthPulse – Mini-Game Module                                            */
-/*  ES module, vanilla JS. Handles game logic, scoring, badge unlocking.      */
-/* -------------------------------------------------------------------------- */
+// ---------------------------------------------------------------------------
+// YouthPulse – Mini-Game Logic Module
+// ES module, vanilla JS. Handles game mechanics, scoring, badge unlocking.
+// ---------------------------------------------------------------------------
 
-import { BADGES_CATALOG } from "./badges.js";
-import { setScore, getScore } from "./db.js";
-import { showToast } from "./utils.js";
+import { BADGES_CATALOG } from './badges.js';
+import { updateLeaderboard } from './leaderboard.js';
+import { showToast } from './ui.js';
+import { saveGameResult } from './db.js';
 
-let gameStartTime = null;
-let gameInterval = null;
-let currentScore = 0;
-let currentQuestionIndex = 0;
+// Game configuration
+const GAME_DURATION = 180; // 3 minutes in seconds
+const POINTS_PER_ACTION = 10;
 
-// Questions inspirées de la réalité de Kinshasa et du codage
-const QUIZ_QUESTIONS = [
-  {
-    prompt: "Quel langage utilise-t-on principalement pour structurer des pages Web statiques en HTML ?",
-    options: ["CSS", "HTML", "Python", "SQL"],
-    correct: 1
-  },
-  {
-    prompt: "À Kinshasa, quel secteur technologique connaît la croissance la plus rapide chez les jeunes ?",
-    options: ["Le développement mobile", "L'agriculture industrielle", "L'horlogerie", "La construction navale"],
-    correct: 0
-  },
-  {
-    prompt: "Que signifie l'acronyme API en programmation ?",
-    options: [
-      "Application Programming Interface",
-      "Advanced Program Integration",
-      "Automated Protocol Interaction",
-      "Application Process Index"
-    ],
-    correct: 0
-  },
-  {
-    prompt: "Quel outil de stockage local est utilisé dans cette application pour fonctionner hors ligne ?",
-    options: ["IndexedDB", "Cloud distant", "Disquette", "Serveur FTP"],
-    correct: 0
-  },
-  {
-    prompt: "Quel est l'objectif principal de l'application YouthPulse ?",
-    options: [
-      "Partager des mini-jeux, témoignages et mèmes locaux",
-      "Vendre des smartphones",
-      "Diffuser des films internationaux",
-      "Jouer à des jeux de casino"
-    ],
-    correct: 0
-  }
-];
+// Game state
+let gameStartTime;
+let gameInterval;
+let score = 0;
+let actionsCompleted = 0;
 
-export function initializeGame() {
-  const launchBtn = document.getElementById("launchGameBtn");
-  const restartBtn = document.getElementById("restartGameBtn");
-
-  if (launchBtn) {
-    launchBtn.addEventListener("click", () => {
-      startGame();
-    });
-  }
-
-  if (restartBtn) {
-    restartBtn.addEventListener("click", () => {
-      startGame();
-    });
-  }
+// Initialize game
+export function initGame() {
+  const launchButton = document.getElementById('launch-game');
+  launchButton.addEventListener('click', startGame);
 }
 
-export function startGame() {
+// Start game sequence
+function startGame() {
+  resetGameState();
+  showGameScreen();
+  startGameTimer();
+  startGameLoop();
+}
+
+// Reset all game variables
+function resetGameState() {
   gameStartTime = Date.now();
-  currentScore = 0;
-  currentQuestionIndex = 0;
-
-  const gameArea = document.getElementById("gameArea");
-  const gamePrompt = document.getElementById("gamePrompt");
-  const gameTitle = document.getElementById("gameTitle");
-  const toast = document.getElementById("gameToast");
-
-  if (toast) {
-    toast.textContent = "";
-    toast.style.display = "none";
-  }
-
-  if (gameTitle) {
-    gameTitle.textContent = "Défi Jeunesse Kinshasa – En cours";
-  }
-
-  renderQuestion();
+  score = 0;
+  actionsCompleted = 0;
+  clearInterval(gameInterval);
 }
 
-function renderQuestion() {
-  const gameArea = document.getElementById("gameArea");
-  const gamePrompt = document.getElementById("gamePrompt");
+// Show the game canvas and hide other elements
+function showGameScreen() {
+  const gameSection = document.getElementById('game');
+  gameSection.style.display = 'block';
 
-  if (!gameArea || !gamePrompt) return;
+  // Create game elements dynamically (since IDs were missing)
+  const gameContainer = document.createElement('div');
+  gameContainer.id = 'game-container';
+  gameContainer.innerHTML = `
+    <canvas id="gameCanvas" width="300" height="300"></canvas>
+    <div id="game-hud">
+      <div id="timer">3:00</div>
+      <div id="score">0</div>
+    </div>
+  `;
+  gameSection.appendChild(gameContainer);
 
-  if (currentQuestionIndex >= QUIZ_QUESTIONS.length) {
-    endGame();
-    return;
-  }
+  // Initialize game canvas
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const q = QUIZ_QUESTIONS[currentQuestionIndex];
-  gamePrompt.textContent = `Question ${currentQuestionIndex + 1} sur ${QUIZ_QUESTIONS.length} : ${q.prompt}`;
-
-  gameArea.innerHTML = "";
-  q.options.forEach((opt, idx) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "game-option-btn";
-    btn.textContent = opt;
-    btn.style.margin = "8px 0";
-    btn.style.padding = "12px";
-    btn.style.width = "100%";
-    btn.style.border = "1px solid var(--border-color, #ccc)";
-    btn.style.borderRadius = "8px";
-    btn.style.background = "var(--bg-card, #fff)";
-    btn.style.cursor = "pointer";
-    btn.style.textAlign = "left";
-
-    btn.addEventListener("click", () => {
-      handleAnswer(idx === q.correct);
-    });
-
-    gameArea.appendChild(btn);
-  });
+  // Add event listeners
+  canvas.addEventListener('click', handleGameAction);
 }
 
-function handleAnswer(isCorrect) {
-  if (isCorrect) {
-    currentScore += 20;
-    showToast("Bonne réponse ! +20 points.");
-  } else {
-    showToast("Mauvaise réponse ! Continue.");
-  }
+// Start the game timer
+function startGameTimer() {
+  let remainingTime = GAME_DURATION;
+  const timerElement = document.getElementById('timer');
 
-  currentQuestionIndex++;
-  renderQuestion();
+  gameInterval = setInterval(() => {
+    remainingTime--;
+    timerElement.textContent = formatTime(remainingTime);
+
+    if (remainingTime <= 0) {
+      endGame();
+    }
+  }, 1000);
 }
 
+// Format time in MM:SS format
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Handle player actions (canvas clicks)
+function handleGameAction() {
+  actionsCompleted++;
+  score += POINTS_PER_ACTION;
+  updateScoreDisplay();
+
+  // Simple visual feedback
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ff0';
+  ctx.beginPath();
+  ctx.arc(
+    Math.random() * canvas.width,
+    Math.random() * canvas.height,
+    20,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+}
+
+// Update the score display
+function updateScoreDisplay() {
+  const scoreElement = document.getElementById('score');
+  scoreElement.textContent = score;
+}
+
+// End the game and process results
 function endGame() {
-  const durationSec = Math.round((Date.now() - gameStartTime) / 1000);
-  const gameArea = document.getElementById("gameArea");
-  const gamePrompt = document.getElementById("gamePrompt");
-  const gameTitle = document.getElementById("gameTitle");
-  const toast = document.getElementById("gameToast");
+  clearInterval(gameInterval);
 
-  if (gameTitle) {
-    gameTitle.textContent = "Défi Jeunesse Kinshasa – Terminé";
-  }
-
-  if (gamePrompt) {
-    gamePrompt.textContent = `Bravo ! Vous avez terminé le mini-jeu en ${durationSec} secondes avec un score de ${currentScore} points.`;
-  }
-
-  if (gameArea) {
-    gameArea.innerHTML = "";
-  }
-
-  if (toast) {
-    const timestamp = new Date().toLocaleTimeString();
-    toast.textContent = `Jeu complété à ${timestamp} (${durationSec}s). Score : ${currentScore}`;
-    toast.style.display = "block";
-  }
-
-  const context = {
+  const durationSec = Math.floor((Date.now() - gameStartTime) / 1000);
+  const gameResult = {
+    score,
+    durationSec,
     gameCompleted: true,
-    durationSec: durationSec,
-    score: currentScore
+    actionsCompleted
   };
 
-  processBadges(context);
-  updateScore(currentScore);
+  processBadges(gameResult);
+  updateLeaderboard(gameResult);
+  saveGameResult(gameResult);
+  showCompletionToast(gameResult);
 }
 
-function processBadges(context) {
-  BADGES_CATALOG.forEach((badge) => {
-    try {
-      if (badge.condition && badge.condition(context)) {
-        unlockBadge(badge.id);
-      }
-    } catch (err) {
-      console.error(`Erreur lors de l'évaluation du badge ${badge.id}:`, err);
+// Check badge conditions and unlock if met
+function processBadges(gameResult) {
+  BADGES_CATALOG.forEach(badge => {
+    if (badge.condition && badge.condition(gameResult)) {
+      unlockBadge(badge.id);
     }
   });
 }
 
-async function unlockBadge(badgeId) {
-  try {
-    const badgeKey = `badge_${badgeId}`;
-    if (localStorage.getItem(badgeKey) !== "true") {
-      localStorage.setItem(badgeKey, "true");
-      showToast(`Badge débloqué : ${badgeId} !`);
-    }
-  } catch (e) {
-    console.error("Échec du déblocage du badge :", e);
-  }
+// Unlock a badge (implementation in badges.js)
+function unlockBadge(badgeId) {
+  // This function should be implemented in badges.js
+  // Example: badgesAPI.unlockBadge(badgeId);
 }
 
-async function updateScore(pointsToAdd) {
-  try {
-    const currentStoredScore = await getScore();
-    const newTotal = (currentStoredScore || 0) + pointsToAdd;
-    await setScore(newTotal);
-  } catch (err) {
-    console.error("Erreur lors de la mise à jour du score :", err);
-  }
+// Show completion toast with timestamp
+function showCompletionToast(result) {
+  const timestamp = new Date().toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  showToast(`Jeu terminé à ${timestamp} ! Score : ${result.score}`);
+
+  // Cleanup game UI
+  const gameSection = document.getElementById('game');
+  gameSection.style.display = 'none';
+  gameSection.innerHTML = ''; // Clear dynamically created elements
 }
